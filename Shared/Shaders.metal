@@ -1,291 +1,472 @@
+//#include <metal_stdlib>
+//using namespace metal;
 //
-//  Shaders.metal
-//  FluidDynamicsMetal
+//struct VertexIn {
+//    float2 position [[attribute(0)]];
+//};
 //
-//  Created by Andrei-Sergiu Pițiș on 02/08/2017.
-//  Copyright © 2017 Andrei-Sergiu Pițiș. All rights reserved.
+//struct VertexOut {
+//    float4 position [[position]];
+//    float2 uv;
+//    float2 vL;
+//    float2 vR;
+//    float2 vT;
+//    float2 vB;
+//};
 //
+//vertex VertexOut baseVertexShader(VertexIn in [[stage_in]], constant float2 &texelSize [[buffer(0)]]) {
+//    VertexOut out;
+//    out.uv = in.position * 0.5 + 0.5;
+//    out.vL = out.uv - float2(texelSize.x, 0.0);
+//    out.vR = out.uv + float2(texelSize.x, 0.0);
+//    out.vT = out.uv + float2(0.0, texelSize.y);
+//    out.vB = out.uv - float2(0.0, texelSize.y);
+//    out.position = float4(in.position, 0.0, 1.0);
+//    return out;
+//}
+//
+//
+//vertex VertexOut blurVertexShader(VertexIn in [[stage_in]], constant float2 &texelSize [[buffer(0)]]) {
+//    VertexOut out;
+//    out.uv = in.position * 0.5 + 0.5;
+//    float offset = 1.33333333;
+//    out.vL = out.uv - texelSize * offset;
+//    out.vR = out.uv + texelSize * offset;
+//    out.position = float4(in.position, 0.0, 1.0);
+//    return out;
+//}
+//
+//fragment half4 blurShader(VertexOut in [[stage_in]], texture2d<float, access::sample> uTexture [[texture(0)]]) {
+//    constexpr sampler sampler2d(filter::linear);
+//    half4 sum = half4(uTexture.sample(sampler2d, in.uv)) * 0.29411764;
+//    sum += half4(uTexture.sample(sampler2d, in.vL)) * 0.35294117;
+//    sum += half4(uTexture.sample(sampler2d, in.vR)) * 0.35294117;
+//    return sum;
+//}
+//
+//fragment half4 copyShader(VertexOut in [[stage_in]], texture2d<float, access::sample> uTexture [[texture(0)]]) {
+//    constexpr sampler sampler2d(filter::linear);
+//    return half4(uTexture.sample(sampler2d, in.uv));
+//}
+//
+//fragment half4 clearShader(VertexOut in [[stage_in]], texture2d<float, access::sample> uTexture [[texture(0)]], constant float &value [[buffer(0)]]) {
+//    constexpr sampler sampler2d(filter::linear);
+//    return half4(value * uTexture.sample(sampler2d, in.uv));
+//}
+//
+//fragment half4 colorShader(VertexOut in [[stage_in]], constant float4 &color [[buffer(0)]]) {
+//    return half4(color);
+//}
+//
+//fragment half4 displayShader(VertexOut in [[stage_in]], texture2d<float, access::sample> uTexture [[texture(0)]], texture2d<float, access::sample> uBloom [[texture(1)]], texture2d<float, access::sample> uSunrays [[texture(2)]], texture2d<float, access::sample> uDithering [[texture(3)]], constant float2 &ditherScale [[buffer(0)]], constant float2 &texelSize [[buffer(1)]]) {
+//    constexpr sampler sampler2d(filter::linear);
+//    half3 c = half3(uTexture.sample(sampler2d, in.uv).rgb);
+//    half3 bloom = half3(uBloom.sample(sampler2d, in.uv).rgb);
+//    half sunrays = uSunrays.sample(sampler2d, in.uv).r;
+//    c *= sunrays;
+//    bloom *= sunrays;
+//    half noise = uDithering.sample(sampler2d, in.uv * ditherScale).r * 2.0 - 1.0;
+//    bloom += noise / 255.0;
+//    c += bloom;
+//    half a = max(c.r, max(c.g, c.b));
+//    return half4(c, a);
+//}
+//
+//fragment half4 splatShader(VertexOut in [[stage_in]], texture2d<float, access::sample> uTarget [[texture(0)]], constant float &aspectRatio [[buffer(0)]], constant float3 &color [[buffer(1)]], constant float2 &point [[buffer(2)]], constant float &radius [[buffer(3)]]) {
+//    constexpr sampler sampler2d(filter::linear);
+//    float2 p = in.uv - point;
+//    p.x *= aspectRatio;
+//    float falloff = exp(-dot(p, p) / radius);
+//    half3 splat = half3(color * falloff);
+//    half3 base = half3(uTarget.sample(sampler2d, in.uv).xyz);
+//    return half4(base + splat, 1.0);
+//}
+//
+//
+//fragment half4 advectionShader(VertexOut in [[stage_in]], texture2d<float, access::sample> uVelocity [[texture(0)]], texture2d<float, access::sample> uSource [[texture(1)]], constant float2 &texelSize [[buffer(0)]], constant float2 &dyeTexelSize [[buffer(1)]], constant float &dt [[buffer(2)]], constant float &dissipation [[buffer(3)]]) {
+//    constexpr sampler sampler2d(filter::linear);
+//    float2 coord = in.uv - dt * uVelocity.sample(sampler2d, in.uv).xy * texelSize;
+//    half4 result = half4(uSource.sample(sampler2d, coord));
+//    float decay = 1.0 + dissipation * dt;
+//    return result / decay;
+//}
+//
+//fragment half4 divergenceShader(VertexOut in [[stage_in]], texture2d<float, access::sample> uVelocity [[texture(0)]], constant float2 &offsets [[buffer(0)]]) {
+//    constexpr sampler sampler2d(filter::linear);
+//    float vl = uVelocity.sample(sampler2d, in.vL).x;
+//    float vr = uVelocity.sample(sampler2d, in.vR).x;
+//    float vt = uVelocity.sample(sampler2d, in.vT).y;
+//    float vb = uVelocity.sample(sampler2d, in.vB).y;
+//    float divergence = 0.5 * (vr - vl + vt - vb);
+//    return half4(divergence, 0.0, 0.0, 1.0);
+//}
+//
+//fragment half4 curlShader(VertexOut in [[stage_in]], texture2d<float, access::sample> uVelocity [[texture(0)]]) {
+//    constexpr sampler sampler2d(filter::linear);
+//    float vl = uVelocity.sample(sampler2d, in.vL).y;
+//    float vr = uVelocity.sample(sampler2d, in.vR).y;
+//    float vt = uVelocity.sample(sampler2d, in.vT).x;
+//    float vb = uVelocity.sample(sampler2d, in.vB).x;
+//    float vorticity = vr - vl - vt + vb;
+//    return half4(0.5 * vorticity, 0.0, 0.0, 1.0);
+//}
+//
+//fragment half4 vorticityShader(VertexOut in [[stage_in]], texture2d<float, access::sample> uVelocity [[texture(0)]], texture2d<float, access::sample> uCurl [[texture(1)]], constant float &curl [[buffer(0)]], constant float &dt [[buffer(1)]]) {
+//    constexpr sampler sampler2d(filter::linear);
+//    float L = uCurl.sample(sampler2d, in.vL).x;
+//    float R = uCurl.sample(sampler2d, in.vR).x;
+//    float T = uCurl.sample(sampler2d, in.vT).x;
+//    float B = uCurl.sample(sampler2d, in.vB).x;
+//    float C = uCurl.sample(sampler2d, in.uv).x;
+//    float2 force = 0.5 * float2(abs(T) - abs(B), abs(R) - abs(L));
+//    force /= length(force) + 0.0001;
+//    force *= curl * C;
+//    force.y *= -1.0;
+//    float2 velocity = uVelocity.sample(sampler2d, in.uv).xy;
+//    velocity += force * dt;
+//    velocity = clamp(velocity, -1000.0, 1000.0);
+//    return half4(half2(velocity), 0.0h, 1.0h);
+//}
+//
+//fragment half4 pressureShader(VertexOut in [[stage_in]], texture2d<float, access::sample> uPressure [[texture(0)]], texture2d<float, access::sample> uDivergence [[texture(1)]]) {
+//    constexpr sampler sampler2d(filter::linear);
+//    float pl = uPressure.sample(sampler2d, in.vL).x;
+//    float pr = uPressure.sample(sampler2d, in.vR).x;
+//    float pt = uPressure.sample(sampler2d, in.vT).x;
+//    float pb = uPressure.sample(sampler2d, in.vB).x;
+//    float div = uDivergence.sample(sampler2d, in.uv).x;
+//    float pressure = (pl + pr + pt + pb - div) * 0.25;
+//    return half4(pressure, 0.0, 0.0, 1.0);
+//}
+//
+//fragment half4 gradientSubtractShader(VertexOut in [[stage_in]], texture2d<float, access::sample> uPressure [[texture(0)]], texture2d<float, access::sample> uVelocity [[texture(1)]]) {
+//    constexpr sampler sampler2d(filter::linear);
+//    float pl = uPressure.sample(sampler2d, in.vL).x;
+//    float pr = uPressure.sample(sampler2d, in.vR).x;
+//    float pt = uPressure.sample(sampler2d, in.vT).x;
+//    float pb = uPressure.sample(sampler2d, in.vB).x;
+//    float2 velocity = uVelocity.sample(sampler2d, in.uv).xy;
+//    velocity -= float2(pr - pl, pt - pb);
+//    return half4(half2(velocity), 0.0h, 1.0h);
+//}
 
 #include <metal_stdlib>
 using namespace metal;
 
 struct VertexIn {
-    float2 position [[attribute(0)]];
-    float2 textureCoorinates [[attribute(1)]];
+    float2 aPosition [[attribute(0)]];
 };
 
 struct VertexOut {
     float4 position [[position]];
-    float2 textureCoorinates;
+    float2 vUv;
+    float2 vL;
+    float2 vR;
+    float2 vT;
+    float2 vB;
 };
 
-//Render to screen
-vertex VertexOut vertexShader(constant VertexIn* vertexArray [[buffer(0)]], unsigned int vid [[vertex_id]]) {
+struct Uniforms {
+    float2 texelSize;
+    float aspectRatio;
+    float dt;
+    float dissipation;
+    float intensity;
+    float threshold;
+    float3 curve;
+    float4 color;
+    float2 point;
+    float radius;
+    float weight;
+    float curl;
+    float value;
+    float2 ditherScale;
+};
 
+// Base Vertex Shader
+vertex VertexOut baseVertexShader(constant VertexIn* vertexArray [[buffer(0)]], unsigned int vid [[vertex_id]], constant Uniforms &uniforms [[buffer(1)]]) {
     VertexIn vertexData = vertexArray[vid];
-    VertexOut vertexDataOut;
-    vertexDataOut.position = float4(vertexData.position.x, vertexData.position.y, 0.0, 1.0);
-    vertexDataOut.textureCoorinates = vertexData.textureCoorinates.xy;
-    return vertexDataOut;
+    VertexOut out;
+
+    out.vUv = vertexData.aPosition * 0.5 + 0.5;
+    out.vL = out.vUv - float2(uniforms.texelSize.x, 0.0);
+    out.vR = out.vUv + float2(uniforms.texelSize.x, 0.0);
+    out.vT = out.vUv + float2(0.0, uniforms.texelSize.y);
+    out.vB = out.vUv - float2(0.0, uniforms.texelSize.y);
+    
+    out.position = float4(vertexData.aPosition, 0.0, 1.0);
+    return out;
+}
+// Advection Fragment Shader
+fragment float4 advectionShader(VertexOut in [[stage_in]], constant Uniforms &uniforms [[buffer(1)]],
+                          texture2d<float> uVelocity [[texture(0)]], texture2d<float> uSource [[texture(1)]]) {
+    constexpr sampler textureSampler(mag_filter::linear, min_filter::linear);
+    
+    float2 coord = in.vUv - uniforms.dt * uVelocity.sample(textureSampler, in.vUv).xy * uniforms.texelSize;
+    float4 result = uSource.sample(textureSampler, coord);
+    float decay = 1.0 + uniforms.dissipation * uniforms.dt;
+    return result / decay;
 }
 
-fragment half4 visualizeScalar(VertexOut fragmentIn [[stage_in]], texture2d<float, access::sample> tex2d [[texture(0)]]) {
-    constexpr sampler sampler2d(filter::nearest);
-
-    half4 color = half4(tex2d.sample(sampler2d, fragmentIn.textureCoorinates));
-
-    return half4(half3(0.0, 0.06, 0.19) * abs(color.xxx), 1.0);
+// Bloom Blur Fragment Shader
+fragment float4 bloomBlur(VertexOut in [[stage_in]], texture2d<float> uTexture [[texture(0)]]) {
+    constexpr sampler textureSampler(mag_filter::linear, min_filter::linear);
+    
+    float4 sum = uTexture.sample(textureSampler, in.vL) +
+                 uTexture.sample(textureSampler, in.vR) +
+                 uTexture.sample(textureSampler, in.vT) +
+                 uTexture.sample(textureSampler, in.vB);
+    return sum * 0.25;
 }
 
-fragment half4 visualizeVector(VertexOut fragmentIn [[stage_in]], texture2d<float, access::sample> tex2d [[texture(0)]]) {
-    constexpr sampler sampler2d(filter::nearest);
-
-    half4 color = half4(tex2d.sample(sampler2d, fragmentIn.textureCoorinates));
-
-    return half4(half4(0.5) + 0.5 * color);
+// Bloom Final Fragment Shader
+fragment float4 bloomFinal(VertexOut in [[stage_in]], constant Uniforms &uniforms [[buffer(1)]],
+                           texture2d<float> uTexture [[texture(0)]]) {
+    constexpr sampler textureSampler(mag_filter::linear, min_filter::linear);
+    
+    float4 sum = uTexture.sample(textureSampler, in.vL) +
+                 uTexture.sample(textureSampler, in.vR) +
+                 uTexture.sample(textureSampler, in.vT) +
+                 uTexture.sample(textureSampler, in.vB);
+    return sum * 0.25 * uniforms.intensity;
 }
 
-//Fluid Dynamics Render Encoder
-
-struct BufferData {
-    float2 positions[5];
-    float2 impulses[5];
-
-    float2 impulseScalar;
-    float2 offsets;
-
-    float2 screenSize;
-
-    float inkRadius;
-};
-
-inline float2 bilerpFrag(sampler textureSampler, texture2d<float> texture, float2 p, float2 screenSize) {
-    float4 ij; // i0, j0, i1, j1
-    ij.xy = floor(p - 0.5) + 0.5;
-    ij.zw = ij.xy + 1.0;
-
-    float4 uv = ij / screenSize.xyxy;
-    float2 d11 = texture.sample(textureSampler, uv.xy).xy;
-    float2 d21 = texture.sample(textureSampler, uv.zy).xy;
-    float2 d12 = texture.sample(textureSampler, uv.xw).xy;
-    float2 d22 = texture.sample(textureSampler, uv.zw).xy;
-
-    float2 a = p - ij.xy;
-
-    return mix(mix(d11, d21, a.x), mix(d12, d22, a.x), a.y);
+// Bloom Prefilter Fragment Shader
+fragment float4 bloomPrefilter(VertexOut in [[stage_in]], constant Uniforms &uniforms [[buffer(1)]],
+                               texture2d<float> uTexture [[texture(0)]]) {
+    constexpr sampler textureSampler(mag_filter::linear, min_filter::linear);
+    
+    float3 c = uTexture.sample(textureSampler, in.vUv).rgb;
+    float br = max(c.r, max(c.g, c.b));
+    float rq = clamp(br - uniforms.curve.x, 0.0, uniforms.curve.y);
+    rq = uniforms.curve.z * rq * rq;
+    c *= max(rq, br - uniforms.threshold) / max(br, 0.0001);
+    return float4(c, 0.0);
 }
 
-inline half gaussSplat(half2 p, half r)
-{
-    return exp(-dot(p, p) / r);
+// Blur Fragment Shader
+fragment float4 blur(VertexOut in [[stage_in]], texture2d<float> uTexture [[texture(0)]]) {
+    constexpr sampler textureSampler(mag_filter::linear, min_filter::linear);
+    
+    float4 sum = uTexture.sample(textureSampler, in.vUv) * 0.29411764;
+    sum += uTexture.sample(textureSampler, in.vL) * 0.35294117;
+    sum += uTexture.sample(textureSampler, in.vR) * 0.35294117;
+    return sum;
 }
 
-fragment half2 applyForceVector(VertexOut fragmentIn [[stage_in]], texture2d<float, access::sample> input [[texture(0)]], constant BufferData &bufferData [[buffer(0)]]) {
-    constexpr sampler fluid_sampler(filter::nearest);
+// Blur Vertex Shader
+vertex VertexOut blurVertex(VertexIn in [[stage_in]], constant Uniforms &uniforms [[buffer(1)]]) {
+    VertexOut out;
+    out.vUv = in.aPosition * 0.5 + 0.5;
+    float offset = 1.33333333;
+    out.vL = out.vUv - uniforms.texelSize * offset;
+    out.vR = out.vUv + uniforms.texelSize * offset;
+    out.position = float4(in.aPosition, 0.0, 1.0);
+    return out;
+}
 
-    half2 screenSize = half2(bufferData.screenSize);
-    float radius = bufferData.inkRadius;
+// Checkerboard Fragment Shader
+fragment float4 checkerboard(VertexOut in [[stage_in]], constant Uniforms &uniforms [[buffer(1)]],
+                             texture2d<float> uTexture [[texture(0)]]) {
+    float2 uv = floor(in.vUv * 25.0 * float2(uniforms.aspectRatio, 1.0));
+    float v = fmod(uv.x + uv.y, 2.0);
+    v = v * 0.1 + 0.8;
+    return float4(float3(v), 1.0);
+}
 
-    half2 color = half2(input.sample(fluid_sampler, fragmentIn.textureCoorinates).xy);
-    half2 final = color;
+// Clear Fragment Shader
+fragment float4 clearShader(VertexOut in [[stage_in]], constant Uniforms &uniforms [[buffer(1)]],
+                      texture2d<float> uTexture [[texture(0)]]) {
+    constexpr sampler textureSampler(mag_filter::linear, min_filter::linear);
+    return uniforms.value * uTexture.sample(textureSampler, in.vUv);
+}
 
-    for (int i=0; i<5; ++i) {
-        half2 impulse = half2(bufferData.impulses[i]);
-        half2 location = half2(bufferData.positions[i]);
+// Color Fragment Shader
+fragment float4 colorShader(VertexOut in [[stage_in]], constant Uniforms &uniforms [[buffer(1)]]) {
+    return uniforms.color;
+}
 
-        if (location.x == location.y && location.x == 0) {
-            continue;
-        }
+// Copy Fragment Shader
+fragment float4 copyShader(VertexOut in [[stage_in]], texture2d<float> uTexture [[texture(0)]]) {
+    constexpr sampler textureSampler(mag_filter::linear, min_filter::linear);
+    return uTexture.sample(textureSampler, in.vUv);
+}
 
-        half2 coords = location - half2(fragmentIn.textureCoorinates).xy * screenSize;
-        half2 splat = impulse * gaussSplat(coords, radius);
+// Curl Fragment Shader
+fragment float4 curlShader(VertexOut in [[stage_in]], texture2d<float> uVelocity [[texture(0)]]) {
+    constexpr sampler textureSampler(mag_filter::linear, min_filter::linear);
+    
+    float L = uVelocity.sample(textureSampler, in.vL).y;
+    float R = uVelocity.sample(textureSampler, in.vR).y;
+    float T = uVelocity.sample(textureSampler, in.vT).x;
+    float B = uVelocity.sample(textureSampler, in.vB).x;
+    float vorticity = R - L - T + B;
+    return float4(0.5 * vorticity, 0.0, 0.0, 1.0);
+}
 
-        final = final + splat;
+// Display Fragment Shader
+fragment float4 displayShader(VertexOut in [[stage_in]], constant Uniforms &uniforms [[buffer(1)]],
+                        texture2d<float> uTexture [[texture(0)]], texture2d<float> uBloom [[texture(1)]],
+                        texture2d<float> uSunrays [[texture(2)]], texture2d<float> uDithering [[texture(3)]]) {
+    constexpr sampler textureSampler(mag_filter::linear, min_filter::linear);
+    
+    float3 c = uTexture.sample(textureSampler, in.vUv).rgb;
+    
+#ifdef SHADING
+    float3 lc = uTexture.sample(textureSampler, in.vL).rgb;
+    float3 rc = uTexture.sample(textureSampler, in.vR).rgb;
+    float3 tc = uTexture.sample(textureSampler, in.vT).rgb;
+    float3 bc = uTexture.sample(textureSampler, in.vB).rgb;
+    
+    float dx = length(rc) - length(lc);
+    float dy = length(tc) - length(bc);
+    
+    float3 n = normalize(float3(dx, dy, length(uniforms.texelSize)));
+    float3 l = float3(0.0, 0.0, 1.0);
+    
+    float diffuse = clamp(dot(n, l) + 0.7, 0.7, 1.0);
+    c *= diffuse;
+#endif
+    
+#ifdef BLOOM
+    float3 bloom = uBloom.sample(textureSampler, in.vUv).rgb;
+#endif
+    
+#ifdef SUNRAYS
+    float sunrays = uSunrays.sample(textureSampler, in.vUv).r;
+    c *= sunrays;
+#ifdef BLOOM
+    bloom *= sunrays;
+#endif
+#endif
+    
+#ifdef BLOOM
+    float noise = uDithering.sample(textureSampler, in.vUv * uniforms.ditherScale).r;
+    noise = noise * 2.0 - 1.0;
+    bloom += noise / 255.0;
+    bloom = max(1.055 * pow(bloom, float3(0.416666667)) - 0.055, float3(0));
+    c += bloom;
+#endif
+    
+    float a = max(c.r, max(c.g, c.b));
+    return float4(c, a);
+}
+
+// Divergence Fragment Shader
+fragment float4 divergenceShader(VertexOut in [[stage_in]], texture2d<float> uVelocity [[texture(0)]]) {
+    constexpr sampler textureSampler(mag_filter::linear, min_filter::linear);
+    
+    float L = uVelocity.sample(textureSampler, in.vL).x;
+    float R = uVelocity.sample(textureSampler, in.vR).x;
+    float T = uVelocity.sample(textureSampler, in.vT).y;
+    float B = uVelocity.sample(textureSampler, in.vB).y;
+    
+    float2 C = uVelocity.sample(textureSampler, in.vUv).xy;
+    if (in.vL.x < 0.0) { L = -C.x; }
+    if (in.vR.x > 1.0) { R = -C.x; }
+    if (in.vT.y > 1.0) { T = -C.y; }
+    if (in.vB.y < 0.0) { B = -C.y; }
+    
+    float div = 0.5 * (R - L + T - B);
+    return float4(div, 0.0, 0.0, 1.0);
+}
+
+// Gradient Subtract Fragment Shader
+fragment float4 gradientSubtractShader(VertexOut in [[stage_in]], texture2d<float> uPressure [[texture(0)]],
+                                 texture2d<float> uVelocity [[texture(1)]]) {
+    constexpr sampler textureSampler(mag_filter::linear, min_filter::linear);
+    
+    float L = uPressure.sample(textureSampler, in.vL).x;
+    float R = uPressure.sample(textureSampler, in.vR).x;
+    float T = uPressure.sample(textureSampler, in.vT).x;
+    float B = uPressure.sample(textureSampler, in.vB).x;
+    float2 velocity = uVelocity.sample(textureSampler, in.vUv).xy;
+    velocity.xy -= float2(R - L, T - B);
+    return float4(velocity, 0.0, 1.0);
+}
+
+// Pressure Fragment Shader
+fragment float4 pressureShader(VertexOut in [[stage_in]], texture2d<float> uPressure [[texture(0)]],
+                         texture2d<float> uDivergence [[texture(1)]]) {
+    constexpr sampler textureSampler(mag_filter::linear, min_filter::linear);
+    
+    float L = uPressure.sample(textureSampler, in.vL).x;
+    float R = uPressure.sample(textureSampler, in.vR).x;
+    float T = uPressure.sample(textureSampler, in.vT).x;
+    float B = uPressure.sample(textureSampler, in.vB).x;
+    float C = uPressure.sample(textureSampler, in.vUv).x;
+    float divergence = uDivergence.sample(textureSampler, in.vUv).x;
+    float pressure = (L + R + B + T - divergence) * 0.25;
+    return float4(pressure, 0.0, 0.0, 1.0);
+}
+
+// Splat Fragment Shader
+fragment float4 splatShader(VertexOut in [[stage_in]], constant Uniforms &uniforms [[buffer(1)]],
+                      texture2d<float> uTarget [[texture(0)]]) {
+    constexpr sampler textureSampler(mag_filter::linear, min_filter::linear);
+
+    float2 p = in.vUv - uniforms.point;
+    p.x *= uniforms.aspectRatio;
+    float3 splat = exp(-dot(p, p) / uniforms.radius) * uniforms.color.rgb;
+    float3 base = uTarget.sample(textureSampler, in.vUv).xyz;
+    return float4(base + splat, 1.0);
+}
+
+// Sunrays Mask Fragment Shader
+fragment float4 sunraysMask(VertexOut in [[stage_in]], texture2d<float> uTexture [[texture(0)]]) {
+    constexpr sampler textureSampler(mag_filter::linear, min_filter::linear);
+    
+    float4 c = uTexture.sample(textureSampler, in.vUv);
+    float br = max(c.r, max(c.g, c.b));
+    c.a = 1.0 - min(max(br * 20.0, 0.0), 0.8);
+    return c;
+}
+
+// Sunrays Fragment Shader
+fragment float4 sunrays(VertexOut in [[stage_in]], constant Uniforms &uniforms [[buffer(1)]],
+                        texture2d<float> uTexture [[texture(0)]]) {
+    constexpr sampler textureSampler(mag_filter::linear, min_filter::linear);
+    
+    float Density = 0.3;
+    float Decay = 0.95;
+    float Exposure = 0.7;
+    
+    float2 coord = in.vUv;
+    float2 dir = in.vUv - 0.5;
+    
+    dir *= 1.0 / 16.0 * Density;
+    float illuminationDecay = 1.0;
+    
+    float color = uTexture.sample(textureSampler, in.vUv).a;
+    
+    for (int i = 0; i < 16; i++) {
+        coord -= dir;
+        float col = uTexture.sample(textureSampler, coord).a;
+        color += col * illuminationDecay * uniforms.weight;
+        illuminationDecay *= Decay;
     }
-    return final;
+    
+    return float4(color * Exposure, 0.0, 0.0, 1.0);
 }
 
-fragment half2 applyForceScalar(VertexOut fragmentIn [[stage_in]], texture2d<float, access::sample> input [[texture(0)]], constant BufferData &bufferData [[buffer(0)]]) {
-    constexpr sampler fluid_sampler(filter::nearest);
-
-    half2 impulseScalar = half2(bufferData.impulseScalar);
-    half2 screenSize = half2(bufferData.screenSize);
-    float radius = bufferData.inkRadius;
-
-    half2 color = half2(input.sample(fluid_sampler, fragmentIn.textureCoorinates).xy);
-    half2 final = color;
-
-    for (int i=0; i<5; ++i) {
-        half2 location = half2(bufferData.positions[i]);
-
-        if (location.x == location.y && location.x == 0) {
-            continue;
-        }
-
-        half2 coords = location - half2(fragmentIn.textureCoorinates).xy * screenSize;
-        half2 splat = impulseScalar * gaussSplat(coords, radius);
-
-        final = final + splat;
-    }
-    return final;
-}
-
-fragment half2 advect(VertexOut fragmentIn [[stage_in]], texture2d<float, access::sample> velocity [[texture(0)]], texture2d<float, access::sample> advected [[texture(1)]], constant BufferData &bufferData [[buffer(0)]]) {
-
-    constexpr sampler fluid_sampler(filter::nearest);
-
-    float2 screenSize = bufferData.screenSize;
-
-    float2 uv = (fragmentIn.textureCoorinates * screenSize) - velocity.sample(fluid_sampler, fragmentIn.textureCoorinates).xy;
-
-    half2 color = 0.998h * half2(bilerpFrag(fluid_sampler, advected, uv, screenSize));
-
-    return color.xy;
-}
-
-fragment half2 divergence(VertexOut fragmentIn [[stage_in]], texture2d<float, access::sample> velocity [[texture(0)]], constant BufferData &bufferData [[buffer(0)]]) {
-
-    constexpr sampler fluid_sampler(filter::nearest);
-
-    float2 uv = fragmentIn.textureCoorinates;
-
-    float2 offsets = bufferData.offsets;
-
-    float2 xOffset = float2(offsets.x, 0.0);
-    float2 yOffset = float2(0.0, offsets.y);
-
-    float vl = velocity.sample(fluid_sampler, uv - xOffset).x;
-    float vr = velocity.sample(fluid_sampler, uv + xOffset).x;
-    float vb = velocity.sample(fluid_sampler, uv - yOffset).y;
-    float vt = velocity.sample(fluid_sampler, uv + yOffset).y;
-
-    float scale = 0.5;
-    float divergence = scale * (vr - vl + vt - vb);
-
-    return half2(divergence, 0.0);
-}
-
-fragment half2 jacobi(VertexOut fragmentIn [[stage_in]], texture2d<half, access::sample> x [[texture(0)]], texture2d<half, access::sample> b [[texture(1)]], constant BufferData &bufferData [[buffer(0)]]) {
-
-    constexpr sampler fluid_sampler(filter::nearest);
-
-    float2 uv = fragmentIn.textureCoorinates;
-
-    float2 offsets = bufferData.offsets;
-
-    float2 xOffset = float2(offsets.x, 0.0);
-    float2 yOffset = float2(0.0, offsets.y);
-
-    half xl = x.sample(fluid_sampler, uv - xOffset).x;
-    half xr = x.sample(fluid_sampler, uv + xOffset).x;
-    half xb = x.sample(fluid_sampler, uv - yOffset).x;
-    half xt = x.sample(fluid_sampler, uv + yOffset).x;
-
-    half bc = b.sample(fluid_sampler, uv).x;
-
-    half alpha = -1;
-    half beta = 4;
-
-    half result = (xl + xr + xb + xt + alpha * bc) / beta;
-
-    return half2(result, 0.0);
-}
-
-fragment half2 vorticity(VertexOut fragmentIn [[stage_in]], texture2d<float, access::sample> velocity [[texture(0)]], constant BufferData &bufferData [[buffer(0)]]) {
-
-    constexpr sampler fluid_sampler(filter::nearest);
-
-    float2 uv = fragmentIn.textureCoorinates;
-
-    float2 offsets = bufferData.offsets;
-
-    float2 xOffset = float2(offsets.x, 0.0);
-    float2 yOffset = float2(0.0, offsets.y);
-
-    float vl = velocity.sample(fluid_sampler, uv - xOffset).y;
-    float vr = velocity.sample(fluid_sampler, uv + xOffset).y;
-    float vb = velocity.sample(fluid_sampler, uv - yOffset).x;
-    float vt = velocity.sample(fluid_sampler, uv + yOffset).x;
-
-    float scale = 0.5;
-
-    return half2(scale * ((vr - vl) - (vt - vb)), 0.0);
-}
-
-fragment half2 vorticityConfinement(VertexOut fragmentIn [[stage_in]], texture2d<float, access::sample> velocity [[texture(0)]], texture2d<float, access::sample> vorticity [[texture(1)]], constant BufferData &bufferData [[buffer(0)]]) {
-
-    constexpr sampler fluid_sampler(filter::nearest);
-
-    float2 screenSize = bufferData.screenSize;
-
-    float2 uv = fragmentIn.textureCoorinates;
-
-    float2 offsets = bufferData.offsets;
-
-    float2 xOffset = float2(offsets.x, 0.0);
-    float2 yOffset = float2(0.0, offsets.y);
-
-    float vl = vorticity.sample(fluid_sampler, uv - xOffset).x;
-    float vr = vorticity.sample(fluid_sampler, uv + xOffset).x;
-    float vb = vorticity.sample(fluid_sampler, uv - yOffset).x;
-    float vt = vorticity.sample(fluid_sampler, uv + yOffset).x;
-    float vc = vorticity.sample(fluid_sampler, uv).x;
-
-    float scale = 0.5;
-
-    float timestep = 1.0;
-    float epsilon = 2.4414e-4;
-    float2 curl = float2(0.4, 0.4);
-
-
-    float2 force = scale * float2(abs(vt) - abs(vb), abs(vr) - abs(vl));
-    float lengthSquared = max(epsilon, dot(force, force));
-    force *= rsqrt(lengthSquared) * curl * vc;
+// Vorticity Fragment Shader
+fragment float4 vorticityShader(VertexOut in [[stage_in]], constant Uniforms &uniforms [[buffer(1)]],
+                          texture2d<float> uVelocity [[texture(0)]], texture2d<float> uCurl [[texture(1)]]) {
+    constexpr sampler textureSampler(mag_filter::linear, min_filter::linear);
+    
+    float L = uCurl.sample(textureSampler, in.vL).x;
+    float R = uCurl.sample(textureSampler, in.vR).x;
+    float T = uCurl.sample(textureSampler, in.vT).x;
+    float B = uCurl.sample(textureSampler, in.vB).x;
+    float C = uCurl.sample(textureSampler, in.vUv).x;
+    
+    float2 force = 0.5 * float2(abs(T) - abs(B), abs(R) - abs(L));
+    force /= length(force) + 0.0001;
+    force *= uniforms.curl * C;
     force.y *= -1.0;
-
-    float2 velc = velocity.sample(fluid_sampler, uv).xy;
-    float2 result = velc + (timestep * force);
-
-    //Boundary
-    float2 gridValue = uv * screenSize;
-    if(gridValue.x <= 1 || gridValue.y <= 1 || gridValue.x >= screenSize.x - 1 || gridValue.y >= screenSize.y - 1) {
-        result = float2(0.0);
-    }
-
-    return half2(result.x, result.y);
-}
-
-fragment half2 gradient(VertexOut fragmentIn [[stage_in]], texture2d<float, access::sample> p [[texture(0)]], texture2d<float, access::sample> w [[texture(1)]], constant BufferData &bufferData [[buffer(0)]]) {
-
-    constexpr sampler fluid_sampler(filter::nearest);
-
-    float2 screenSize = bufferData.screenSize;
-
-    float2 uv = fragmentIn.textureCoorinates;
-
-    float2 offsets = bufferData.offsets;
-
-    float2 xOffset = float2(offsets.x, 0.0);
-    float2 yOffset = float2(0.0, offsets.y);
-
-    float pl = p.sample(fluid_sampler, uv - xOffset).x;
-    float pr = p.sample(fluid_sampler, uv + xOffset).x;
-    float pb = p.sample(fluid_sampler, uv - yOffset).x;
-    float pt = p.sample(fluid_sampler, uv + yOffset).x;
-
-    float scale = 0.5;
-
-    float2 gradient = scale * float2(pr - pl, pt - pb);
-
-    float2 wc = w.sample(fluid_sampler, uv).xy;
-
-    float2 result = wc - gradient;
-
-    //Boundary
-    float2 gridValue = uv * screenSize;
-
-    if(gridValue.x <= 1 || gridValue.y <= 1 || gridValue.x >= screenSize.x - 1 || gridValue.y >= screenSize.y - 1) {
-        result = float2(0.0);
-    }
-    return half2(result.x, result.y);
+    
+    float2 velocity = uVelocity.sample(textureSampler, in.vUv).xy;
+    velocity += force * uniforms.dt;
+    velocity = clamp(velocity, -1000.0, 1000.0);
+    return float4(velocity, 0.0, 1.0);
 }

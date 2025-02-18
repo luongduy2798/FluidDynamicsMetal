@@ -55,17 +55,17 @@ class Renderer: NSObject {
     private let indexData = MetalDevice.sharedInstance.buffer(array: Renderer.indices, storageMode: [.storageModeShared])
 
     //Shaders
-    private let applyForceVectorShader: RenderShader = RenderShader(fragmentShader: "applyForceVector", vertexShader: "vertexShader", pixelFormat: .rg16Float)
-    private let applyForceScalarShader: RenderShader = RenderShader(fragmentShader: "applyForceScalar", vertexShader: "vertexShader", pixelFormat: .rg16Float)
-    private let advectShader: RenderShader = RenderShader(fragmentShader: "advect", vertexShader: "vertexShader", pixelFormat: .rg16Float)
-    private let divergenceShader: RenderShader = RenderShader(fragmentShader: "divergence", vertexShader: "vertexShader", pixelFormat: .rg16Float)
-    private let jacobiShader: RenderShader = RenderShader(fragmentShader: "jacobi", vertexShader: "vertexShader", pixelFormat: .rg16Float)
-    private let vorticityShader: RenderShader = RenderShader(fragmentShader: "vorticity", vertexShader: "vertexShader", pixelFormat: .rg16Float)
-    private let vorticityConfinementShader: RenderShader = RenderShader(fragmentShader: "vorticityConfinement", vertexShader: "vertexShader", pixelFormat: .rg16Float)
-    private let gradientShader: RenderShader = RenderShader(fragmentShader: "gradient", vertexShader: "vertexShader", pixelFormat: .rg16Float)
-
-    private let renderVector: RenderShader = RenderShader(fragmentShader: "visualizeVector", vertexShader: "vertexShader")
-    private let renderScalar: RenderShader = RenderShader(fragmentShader: "visualizeScalar", vertexShader: "vertexShader")
+    private let copyShader = RenderShader(fragmentShader: "copyShader", vertexShader: "baseVertexShader")
+    private let clearShader = RenderShader(fragmentShader: "clearShader", vertexShader: "baseVertexShader")
+    private let colorShader = RenderShader(fragmentShader: "colorShader", vertexShader: "baseVertexShader")
+    private let displayShader = RenderShader(fragmentShader: "displayShader", vertexShader: "baseVertexShader")
+    private let splatShader = RenderShader(fragmentShader: "splatShader", vertexShader: "baseVertexShader")
+    private let advectionShader = RenderShader(fragmentShader: "advectionShader", vertexShader: "baseVertexShader")
+    private let divergenceShader = RenderShader(fragmentShader: "divergenceShader", vertexShader: "baseVertexShader")
+    private let curlShader = RenderShader(fragmentShader: "curlShader", vertexShader: "baseVertexShader")
+    private let vorticityShader = RenderShader(fragmentShader: "vorticityShader", vertexShader: "baseVertexShader")
+    private let pressureShader = RenderShader(fragmentShader: "pressureShader", vertexShader: "baseVertexShader")
+    private let gradientSubtractShader = RenderShader(fragmentShader: "gradientSubtractShader", vertexShader: "baseVertexShader")
 
     //Touch or Mouse positions
     private var positions: FloatTuple?
@@ -93,7 +93,6 @@ class Renderer: NSObject {
         metalView.colorPixelFormat = .bgra8Unorm
         metalView.framebufferOnly = true
         metalView.preferredFramesPerSecond = 60
-
         mtkView(metalView, drawableSizeWillChange: metalView.drawableSize)
     }
 
@@ -166,36 +165,21 @@ class Renderer: NSObject {
 //Fluid dynamics step methods
 extension Renderer {
     private final func advect(commandBuffer: MTLCommandBuffer, dataBuffer: MTLBuffer, velocity: Slab, source: Slab, destination: Slab) {
-        advectShader.calculateWithCommandBuffer(buffer: commandBuffer, indices: indexData, count: Renderer.indices.count, texture: destination.pong) { (commandEncoder) in
+        advectionShader.calculateWithCommandBuffer(buffer: commandBuffer, indices: indexData, count: Renderer.indices.count, texture: destination.pong) { (commandEncoder) in
             commandEncoder.setVertexBuffer(self.vertData, offset: 0, index: 0)
             commandEncoder.setFragmentTexture(velocity.ping, index: 0)
             commandEncoder.setFragmentTexture(source.ping, index: 1)
-
             commandEncoder.setFragmentBuffer(dataBuffer, offset: 0, index: 0)
         }
-
         destination.swap()
     }
 
-    private final func applyForceVector(commandBuffer: MTLCommandBuffer, dataBuffer: MTLBuffer, destination: Slab) {
-        applyForceVectorShader.calculateWithCommandBuffer(buffer: commandBuffer, indices: indexData, count: Renderer.indices.count, texture: destination.pong) { (commandEncoder) in
+    private final func applySplat(commandBuffer: MTLCommandBuffer, dataBuffer: MTLBuffer, destination: Slab) {
+        splatShader.calculateWithCommandBuffer(buffer: commandBuffer, indices: indexData, count: Renderer.indices.count, texture: destination.pong) { (commandEncoder) in
             commandEncoder.setVertexBuffer(self.vertData, offset: 0, index: 0)
             commandEncoder.setFragmentTexture(destination.ping, index: 0)
-
             commandEncoder.setFragmentBuffer(dataBuffer, offset: 0, index: 0)
         }
-
-        destination.swap()
-    }
-
-    private final func applyForceScalar(commandBuffer: MTLCommandBuffer, dataBuffer: MTLBuffer, destination: Slab) {
-        applyForceScalarShader.calculateWithCommandBuffer(buffer: commandBuffer, indices: indexData, count: Renderer.indices.count, texture: destination.pong) { (commandEncoder) in
-            commandEncoder.setVertexBuffer(self.vertData, offset: 0, index: 0)
-            commandEncoder.setFragmentTexture(destination.ping, index: 0)
-
-            commandEncoder.setFragmentBuffer(dataBuffer, offset: 0, index: 0)
-        }
-
         destination.swap()
     }
 
@@ -203,22 +187,17 @@ extension Renderer {
         divergenceShader.calculateWithCommandBuffer(buffer: commandBuffer, indices: indexData, count: Renderer.indices.count, texture: destination.pong) { (commandEncoder) in
             commandEncoder.setVertexBuffer(self.vertData, offset: 0, index: 0)
             commandEncoder.setFragmentTexture(velocity.ping, index: 0)
-
             commandEncoder.setFragmentBuffer(dataBuffer, offset: 0, index: 0)
         }
-
         destination.swap()
     }
 
-    private final func computePressure(commandBuffer: MTLCommandBuffer, dataBuffer: MTLBuffer, x: Slab, b: Slab, destination: Slab) {
-        jacobiShader.calculateWithCommandBuffer(buffer: commandBuffer, indices: indexData, count: Renderer.indices.count, texture: destination.pong) { (commandEncoder) in
+    private final func computeCurl(commandBuffer: MTLCommandBuffer, dataBuffer: MTLBuffer, velocity: Slab, destination: Slab) {
+        curlShader.calculateWithCommandBuffer(buffer: commandBuffer, indices: indexData, count: Renderer.indices.count, texture: destination.pong) { (commandEncoder) in
             commandEncoder.setVertexBuffer(self.vertData, offset: 0, index: 0)
-            commandEncoder.setFragmentTexture(x.ping, index: 0)
-            commandEncoder.setFragmentTexture(b.ping, index: 1)
-
+            commandEncoder.setFragmentTexture(velocity.ping, index: 0)
             commandEncoder.setFragmentBuffer(dataBuffer, offset: 0, index: 0)
         }
-
         destination.swap()
     }
 
@@ -226,74 +205,52 @@ extension Renderer {
         vorticityShader.calculateWithCommandBuffer(buffer: commandBuffer, indices: indexData, count: Renderer.indices.count, texture: destination.pong) { (commandEncoder) in
             commandEncoder.setVertexBuffer(self.vertData, offset: 0, index: 0)
             commandEncoder.setFragmentTexture(velocity.ping, index: 0)
-
             commandEncoder.setFragmentBuffer(dataBuffer, offset: 0, index: 0)
         }
-
         destination.swap()
     }
 
-    private final func computeVorticityConfinement(commandBuffer: MTLCommandBuffer, dataBuffer: MTLBuffer, velocity: Slab, vorticity: Slab, destination: Slab) {
-        vorticityConfinementShader.calculateWithCommandBuffer(buffer: commandBuffer, indices: indexData, count: Renderer.indices.count, texture: destination.pong) { (commandEncoder) in
+    private final func computePressure(commandBuffer: MTLCommandBuffer, dataBuffer: MTLBuffer, x: Slab, b: Slab, destination: Slab) {
+        pressureShader.calculateWithCommandBuffer(buffer: commandBuffer, indices: indexData, count: Renderer.indices.count, texture: destination.pong) { (commandEncoder) in
             commandEncoder.setVertexBuffer(self.vertData, offset: 0, index: 0)
-            commandEncoder.setFragmentTexture(velocity.ping, index: 0)
-            commandEncoder.setFragmentTexture(vorticity.ping, index: 1)
-
+            commandEncoder.setFragmentTexture(x.ping, index: 0)
+            commandEncoder.setFragmentTexture(b.ping, index: 1)
             commandEncoder.setFragmentBuffer(dataBuffer, offset: 0, index: 0)
         }
-
         destination.swap()
     }
 
     private final func subtractGradient(commandBuffer: MTLCommandBuffer, dataBuffer: MTLBuffer, p: Slab, w: Slab, destination: Slab) {
-        gradientShader.calculateWithCommandBuffer(buffer: commandBuffer, indices: indexData, count: Renderer.indices.count, texture: destination.pong) { (commandEncoder) in
+        gradientSubtractShader.calculateWithCommandBuffer(buffer: commandBuffer, indices: indexData, count: Renderer.indices.count, texture: destination.pong) { (commandEncoder) in
             commandEncoder.setVertexBuffer(self.vertData, offset: 0, index: 0)
             commandEncoder.setFragmentTexture(p.ping, index: 0)
             commandEncoder.setFragmentTexture(w.ping, index: 1)
-
             commandEncoder.setFragmentBuffer(dataBuffer, offset: 0, index: 0)
         }
-
         destination.swap()
     }
-
+    
     private final func render(commandBuffer: MTLCommandBuffer, destination: MTLTexture) {
-        if currentIndex >= 2 {
-            renderVector.calculateWithCommandBuffer(buffer: commandBuffer, indices: indexData, count: Renderer.indices.count, texture: destination) { (commandEncoder) in
-                commandEncoder.setVertexBuffer(self.vertData, offset: 0, index: 0)
-                commandEncoder.setFragmentTexture(self.drawSlab().ping, index: 0)
-            }
-        } else {
-            renderScalar.calculateWithCommandBuffer(buffer: commandBuffer, indices: indexData, count: Renderer.indices.count, texture: destination) { (commandEncoder) in
-                commandEncoder.setVertexBuffer(self.vertData, offset: 0, index: 0)
-                commandEncoder.setFragmentTexture(self.drawSlab().ping, index: 0)
-            }
-        }
+       displayShader.calculateWithCommandBuffer(buffer: commandBuffer, indices: indexData, count: Renderer.indices.count, texture: destination) { (commandEncoder) in
+           commandEncoder.setVertexBuffer(self.vertData, offset: 0, index: 0)
+           commandEncoder.setFragmentTexture(self.density.ping, index: 0)
+       }
     }
 }
 
+// Fluid dynamics step methods
 extension Renderer: MTKViewDelegate {
     func draw(in view: MTKView) {
         semaphore.wait()
         let commandBuffer = MetalDevice.sharedInstance.newCommandBuffer()
-
         let dataBuffer = nextBuffer(positions: positions, directions: directions)
 
-        commandBuffer.addCompletedHandler({ (commandBuffer) in
+        commandBuffer.addCompletedHandler { _ in
             self.semaphore.signal()
-        })
-
-        advect(commandBuffer: commandBuffer, dataBuffer: dataBuffer, velocity: velocity, source: velocity, destination: velocity)
-        advect(commandBuffer: commandBuffer, dataBuffer: dataBuffer, velocity: velocity, source: density, destination: density)
-
-        if let _ = positions, let _ = directions {
-            applyForceVector(commandBuffer: commandBuffer, dataBuffer: dataBuffer, destination: velocity)
-            applyForceScalar(commandBuffer: commandBuffer, dataBuffer: dataBuffer, destination: density)
         }
 
-        computeVorticity(commandBuffer: commandBuffer, dataBuffer: dataBuffer, velocity: velocity, destination: velocityVorticity)
-        computeVorticityConfinement(commandBuffer: commandBuffer, dataBuffer: dataBuffer, velocity: velocity, vorticity: velocityVorticity, destination: velocity)
-
+        computeCurl(commandBuffer: commandBuffer, dataBuffer: dataBuffer, velocity: velocity, destination: velocityVorticity)
+        computeVorticity(commandBuffer: commandBuffer, dataBuffer: dataBuffer, velocity: velocity, destination: velocity)
         computeDivergence(commandBuffer: commandBuffer, dataBuffer: dataBuffer, velocity: velocity, destination: velocityDivergence)
 
         for _ in 0..<40 {
@@ -302,23 +259,26 @@ extension Renderer: MTKViewDelegate {
 
         subtractGradient(commandBuffer: commandBuffer, dataBuffer: dataBuffer, p: pressure, w: velocity, destination: velocity)
 
-        if let drawable = view.currentDrawable {
+        advect(commandBuffer: commandBuffer, dataBuffer: dataBuffer, velocity: velocity, source: velocity, destination: velocity)
+        advect(commandBuffer: commandBuffer, dataBuffer: dataBuffer, velocity: velocity, source: density, destination: density)
 
+        if let _ = positions, let _ = directions {
+            applySplat(commandBuffer: commandBuffer, dataBuffer: dataBuffer, destination: density)
+        }
+
+        if let drawable = view.currentDrawable {
             let nextTexture = drawable.texture
             render(commandBuffer: commandBuffer, destination: nextTexture)
-
             commandBuffer.present(drawable)
         }
 
         commandBuffer.commit()
-
         directions = positions
     }
 
     func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {
         let width = Int(Float(view.bounds.width) / Renderer.ScreenScaleAdjustment)
         let height = Int(Float(view.bounds.height) / Renderer.ScreenScaleAdjustment)
-
         initSurfaces(width: width, height: height)
         initBuffers(width: width, height: height)
     }
