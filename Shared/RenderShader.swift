@@ -21,7 +21,7 @@ class RenderShader {
     private var pipelineState: PipelineStateConfiguration
     private var renderPipelineState: MTLRenderPipelineState?
     
-    init(fragmentShader: String, vertexShader: String, pixelFormat: MTLPixelFormat = .rg16Float) {
+    init(fragmentShader: String, vertexShader: String, pixelFormat: MTLPixelFormat = .bgra8Unorm) {
         pipelineState = PipelineStateConfiguration(pixelFormat: pixelFormat, vertexShader: vertexShader, fragmentShader: fragmentShader, computeShader: "")
         
         commonInit()
@@ -83,19 +83,18 @@ class RenderShader {
     }
     
     private func configurePipeline() {
-        if !pipelineState.vertexShader.isEmpty && !pipelineState.fragmentShader.isEmpty {
+        if pipelineState.vertexShader.count > 0 && pipelineState.fragmentShader.count > 0 {
+            if renderPipelineState != nil {
+                return
+            }
+            
             do {
-                renderPipelineState = try MetalDevice.createRenderPipeline(
-                    vertexFunctionName: pipelineState.vertexShader,
-                    fragmentFunctionName: pipelineState.fragmentShader,
-                    pixelFormat: pipelineState.pixelFormat
-                )
+                renderPipelineState = try MetalDevice.createRenderPipeline(vertexFunctionName: pipelineState.vertexShader, fragmentFunctionName: pipelineState.fragmentShader, pixelFormat: pipelineState.pixelFormat)
             } catch {
-                print("Could not create render pipeline state for \(pipelineState.fragmentShader) . Error: \(error)")
+                print("Could not create render pipeline state.")
             }
         }
     }
-
     
     private func commonInit() {
         configurePipeline()
