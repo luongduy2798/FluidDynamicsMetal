@@ -46,19 +46,72 @@ vertex VertexOut vertexShader(constant VertexIn* vertexArray [[buffer(0)]], unsi
     return vertexDataOut;
 }
 
+
+half4 bloomEffect(
+    VertexOut fragmentIn [[stage_in]],
+    texture2d<float, access::sample> inputTexture [[texture(0)]],
+    constant BufferData &bufferData [[buffer(0)]]
+) {
+    constexpr sampler linearSampler(filter::linear);
+    
+    half3 color = half3(inputTexture.sample(linearSampler, fragmentIn.textureCoorinates).rgb);
+    
+    // Lấy giá trị độ sáng của pixel
+    half luminance = dot(color, half3(0.299h, 0.587h, 0.114h));
+    
+    // Áp dụng hiệu ứng Bloom mạnh hơn
+    half bloomFactor = smoothstep(0.3h, 1.0h, luminance); // Giảm ngưỡng để áp dụng rộng hơn
+    half3 bloomColor = color * bloomFactor * 2.5h; // Tăng cường độ Bloom từ 1.8h lên 2.5h
+
+    return half4(bloomColor + color * 1.2h, 1.0); // Nhân màu gốc để tăng sáng chung
+}
+
+half4 sunrayEffect(
+    VertexOut fragmentIn [[stage_in]],
+    texture2d<float, access::sample> inputTexture [[texture(0)]],
+    constant BufferData &bufferData [[buffer(0)]]
+) {
+    constexpr sampler linearSampler(filter::linear);
+    
+    half3 color = half3(inputTexture.sample(linearSampler, fragmentIn.textureCoorinates).rgb);
+    
+    float2 lightPos = float2(0.5, 0.5); // Tọa độ trung tâm ánh sáng (có thể thay đổi)
+    float2 coord = fragmentIn.textureCoorinates;
+    float2 dir = lightPos - coord;
+    
+    half sunIntensity = 0.0h;
+    const int samples = 12; // Số tia sáng
+    float decay = 0.92; // Giảm dần độ sáng
+
+    for (int i = 0; i < samples; i++) {
+        coord += dir * 0.02;
+        float3 sampledColor = inputTexture.sample(linearSampler, coord).rgb;
+        sunIntensity += dot(sampledColor, float3(0.299, 0.587, 0.114)) * decay;
+        decay *= 0.9; // Giảm dần độ sáng theo khoảng cách
+    }
+    
+    half3 sunrayColor = color + sunIntensity * half3(1.2h, 0.95h, 0.75h); // Màu ánh sáng vàng nhẹ
+
+    return half4(sunrayColor, 1.0);
+}
+
+
+
 fragment half4 visualizeScalar(
     VertexOut fragmentIn [[stage_in]],
     texture2d<float, access::sample> tex2d [[texture(0)]],
     constant BufferData &bufferData [[buffer(0)]]
 ) {
-    constexpr sampler sampler2d(filter::nearest);
-    half3 textureColor = half3(tex2d.sample(sampler2d, fragmentIn.textureCoorinates).rgb);
-    half4 color = half4(tex2d.sample(sampler2d, fragmentIn.textureCoorinates));
-
-    return half4(textureColor * abs(color.xxx), 1.0);
-
+   constexpr sampler sampler2d(filter::nearest);
+   half3 textureColor = half3(tex2d.sample(sampler2d, fragmentIn.textureCoorinates).rgb);
+      
+   half4 bloom = bloomEffect(fragmentIn, tex2d, bufferData);
+   half4 sunray = sunrayEffect(fragmentIn, tex2d, bufferData);
+   half4 finalColor = mix(bloom, sunray, 0.5h);
+   finalColor.rgb *= textureColor; // Nhân với màu ngẫu nhiên để tạo sự biến đổi
+   
+   return finalColor;
 }
-
 
 fragment half4 visualizeVector(VertexOut fragmentIn [[stage_in]], texture2d<float, access::sample> tex2d [[texture(0)]]) {
     constexpr sampler sampler2d(filter::nearest);
@@ -132,10 +185,11 @@ fragment half4 applyForceScalar(
             continue;
         }
 
+
         half2 coords = location - half2(fragmentIn.textureCoorinates).xy * screenSize;
         half splat = gaussSplat(coords, radius);
 
-        final.rgb += splatColor * splat;
+        final.rgb += splatColor * splat * exp(-0.2h * fragmentIn.textureCoorinates.x); // Giảm nhanh hơn ở vùng rìa
     }
  
     return final;
@@ -151,7 +205,7 @@ fragment half2 advect(VertexOut fragmentIn [[stage_in]], texture2d<float, access
 
     float2 uv = (fragmentIn.textureCoorinates * screenSize) - velocity.sample(fluid_sampler, fragmentIn.textureCoorinates).xy;
 
-    half2 color = 0.998h * half2(bilerpFrag(fluid_sampler, advected, uv, screenSize));
+    half2 color = 0.99h * half2(bilerpFrag(fluid_sampler, advected, uv, screenSize));
 
     return color.xy;
 }
@@ -220,7 +274,7 @@ fragment half2 vorticity(VertexOut fragmentIn [[stage_in]], texture2d<float, acc
     float vb = velocity.sample(fluid_sampler, uv - yOffset).x;
     float vt = velocity.sample(fluid_sampler, uv + yOffset).x;
 
-    float scale = 0.5; // độ cuộn
+    float scale = 1; // độ cuộn
 
     return half2(scale * ((vr - vl) - (vt - vb)), 0.0);
 }
