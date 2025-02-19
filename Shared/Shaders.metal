@@ -34,7 +34,7 @@ fragment half4 visualizeScalar(VertexOut fragmentIn [[stage_in]], texture2d<floa
 
     half4 color = half4(tex2d.sample(sampler2d, fragmentIn.textureCoorinates));
 
-    return half4(half3(0.0, 0.06, 0.19) * abs(color.xxx), 1.0);
+    return half4(half3(1.0, 0.0, 0.0) * abs(color.xxx), 1.0);
 }
 
 fragment half4 visualizeVector(VertexOut fragmentIn [[stage_in]], texture2d<float, access::sample> tex2d [[texture(0)]]) {
@@ -129,12 +129,12 @@ fragment half2 applyForceScalar(VertexOut fragmentIn [[stage_in]], texture2d<flo
 
 fragment half2 advect(VertexOut fragmentIn [[stage_in]], texture2d<float, access::sample> velocity [[texture(0)]], texture2d<float, access::sample> advected [[texture(1)]], constant BufferData &bufferData [[buffer(0)]]) {
 
-    constexpr sampler fluid_sampler(filter::linear);
+    constexpr sampler fluid_sampler(filter::nearest);
 
     float2 screenSize = bufferData.screenSize;
 
     float2 uv = (fragmentIn.textureCoorinates * screenSize) - velocity.sample(fluid_sampler, fragmentIn.textureCoorinates).xy;
- 
+
     half2 color = 0.998h * half2(bilerpFrag(fluid_sampler, advected, uv, screenSize));
 
     return color.xy;
@@ -210,47 +210,79 @@ fragment half2 vorticity(VertexOut fragmentIn [[stage_in]], texture2d<float, acc
 }
 
 fragment half2 vorticityConfinement(VertexOut fragmentIn [[stage_in]], texture2d<float, access::sample> velocity [[texture(0)]], texture2d<float, access::sample> vorticity [[texture(1)]], constant BufferData &bufferData [[buffer(0)]]) {
-    constexpr sampler fluid_sampler(filter::linear);
+
+    constexpr sampler fluid_sampler(filter::nearest);
+
     float2 screenSize = bufferData.screenSize;
+
     float2 uv = fragmentIn.textureCoorinates;
+
     float2 offsets = bufferData.offsets;
+
     float2 xOffset = float2(offsets.x, 0.0);
     float2 yOffset = float2(0.0, offsets.y);
-    
+
     float vl = vorticity.sample(fluid_sampler, uv - xOffset).x;
     float vr = vorticity.sample(fluid_sampler, uv + xOffset).x;
     float vb = vorticity.sample(fluid_sampler, uv - yOffset).x;
     float vt = vorticity.sample(fluid_sampler, uv + yOffset).x;
     float vc = vorticity.sample(fluid_sampler, uv).x;
-    
-    float2 force = 0.5 * float2(abs(vt) - abs(vb), abs(vr) - abs(vl));
-    force /= length(force) + 0.0001;
-    force *= bufferData.inkRadius * vc;
+
+    float scale = 0.5;
+
+    float timestep = 1.0;
+    float epsilon = 2.4414e-4;
+    float2 curl = float2(0.4, 0.4);
+
+
+    float2 force = scale * float2(abs(vt) - abs(vb), abs(vr) - abs(vl));
+    float lengthSquared = max(epsilon, dot(force, force));
+    force *= rsqrt(lengthSquared) * curl * vc;
     force.y *= -1.0;
-    
+
     float2 velc = velocity.sample(fluid_sampler, uv).xy;
-    float2 result = velc + (bufferData.offsets.x * force);
-    
+    float2 result = velc + (timestep * force);
+
+    //Boundary
+    float2 gridValue = uv * screenSize;
+    if(gridValue.x <= 1 || gridValue.y <= 1 || gridValue.x >= screenSize.x - 1 || gridValue.y >= screenSize.y - 1) {
+        result = float2(0.0);
+    }
+
     return half2(result.x, result.y);
 }
 
 fragment half2 gradient(VertexOut fragmentIn [[stage_in]], texture2d<float, access::sample> p [[texture(0)]], texture2d<float, access::sample> w [[texture(1)]], constant BufferData &bufferData [[buffer(0)]]) {
-    constexpr sampler fluid_sampler(filter::linear);
+
+    constexpr sampler fluid_sampler(filter::nearest);
+
     float2 screenSize = bufferData.screenSize;
+
     float2 uv = fragmentIn.textureCoorinates;
+
     float2 offsets = bufferData.offsets;
+
     float2 xOffset = float2(offsets.x, 0.0);
     float2 yOffset = float2(0.0, offsets.y);
-    
+
     float pl = p.sample(fluid_sampler, uv - xOffset).x;
     float pr = p.sample(fluid_sampler, uv + xOffset).x;
     float pb = p.sample(fluid_sampler, uv - yOffset).x;
     float pt = p.sample(fluid_sampler, uv + yOffset).x;
-    
+
     float scale = 0.5;
+
     float2 gradient = scale * float2(pr - pl, pt - pb);
+
     float2 wc = w.sample(fluid_sampler, uv).xy;
-    
+
     float2 result = wc - gradient;
+
+    //Boundary
+    float2 gridValue = uv * screenSize;
+
+    if(gridValue.x <= 1 || gridValue.y <= 1 || gridValue.x >= screenSize.x - 1 || gridValue.y >= screenSize.y - 1) {
+        result = float2(0.0);
+    }
     return half2(result.x, result.y);
 }
