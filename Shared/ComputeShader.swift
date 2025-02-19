@@ -18,7 +18,7 @@ class ComputeShader {
     private var computePipelineState: MTLComputePipelineState?
 
     init(computeShader: String) {
-        pipelineState = PipelineStateConfiguration(pixelFormat: .bgra8Unorm, vertexShader: "", fragmentShader: "", computeShader: computeShader)
+        pipelineState = PipelineStateConfiguration(pixelFormat: .rgba16Float, vertexShader: "", fragmentShader: "", computeShader: computeShader)
 
         commonInit()
     }

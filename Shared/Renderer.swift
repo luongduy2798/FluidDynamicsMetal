@@ -94,34 +94,36 @@ class Renderer: NSObject {
     
     private func randomColor() -> float3 {
         let hue = Float.random(in: 0...1)
-        let saturation: Float = 1.0
-        let brightness: Float = 1.0
+        let saturation = Float.random(in: 0.8...1.0) // Giữ bão hòa cao
+        let brightness = Float.random(in: 0.7...1.0) // Giữ sáng cao
+
         return HSVtoRGB(h: hue, s: saturation, v: brightness)
     }
 
     private func HSVtoRGB(h: Float, s: Float, v: Float) -> float3 {
-        let i = Int(h * 6)
-        let f = h * 6 - Float(i)
-        let p = v * (1 - s)
-        let q = v * (1 - f * s)
-        let t = v * (1 - (1 - f) * s)
+        let i = Int(h * 6.0)
+        let f = h * 6.0 - Float(i)
+        let p = v * (1.0 - s)
+        let q = v * (1.0 - f * s)
+        let t = v * (1.0 - (1.0 - f) * s)
 
         switch i % 6 {
-        case 0: return float3(v, t, p)
-        case 1: return float3(q, v, p)
-        case 2: return float3(p, v, t)
-        case 3: return float3(p, q, v)
-        case 4: return float3(t, p, v)
-        case 5: return float3(v, p, q)
-        default: return float3(1, 1, 1)
+        case 0: return float3(v, t, p)      // Đỏ -> Vàng
+        case 1: return float3(q, v, p)      // Vàng -> Xanh lá
+        case 2: return float3(p, v, t)      // Xanh lá -> Cyan
+        case 3: return float3(p, q, v)      // Cyan -> Xanh dương
+        case 4: return float3(t, p, v)      // Xanh dương -> Tím
+        case 5: return float3(v, p, q)      // Tím -> Đỏ (Quan trọng cho hồng/tím)
+        default: return float3(1.0, 1.0, 1.0)
         }
     }
+
 
 
     init(metalView: MTKView) {
         super.init()
         metalView.device = MetalDevice.sharedInstance.device
-        metalView.colorPixelFormat = .bgra8Unorm
+        metalView.colorPixelFormat = .rgba16Float
         metalView.framebufferOnly = true
         metalView.preferredFramesPerSecond = 60
 
@@ -294,7 +296,7 @@ extension Renderer {
         destination.swap()
     }
 
-    private final func render(commandBuffer: MTLCommandBuffer, destination: MTLTexture) {
+    private final func render(commandBuffer: MTLCommandBuffer, dataBuffer: MTLBuffer, destination: MTLTexture) {
         if currentIndex >= 2 {
             renderVector.calculateWithCommandBuffer(buffer: commandBuffer, indices: indexData, count: Renderer.indices.count, texture: destination) { (commandEncoder) in
                 commandEncoder.setVertexBuffer(self.vertData, offset: 0, index: 0)
@@ -304,6 +306,7 @@ extension Renderer {
             renderScalar.calculateWithCommandBuffer(buffer: commandBuffer, indices: indexData, count: Renderer.indices.count, texture: destination) { (commandEncoder) in
                 commandEncoder.setVertexBuffer(self.vertData, offset: 0, index: 0)
                 commandEncoder.setFragmentTexture(self.drawSlab().ping, index: 0)
+                commandEncoder.setFragmentBuffer(dataBuffer, offset: 0, index: 0)
             }
         }
     }
@@ -342,7 +345,7 @@ extension Renderer: MTKViewDelegate {
         if let drawable = view.currentDrawable {
 
             let nextTexture = drawable.texture
-            render(commandBuffer: commandBuffer, destination: nextTexture)
+            render(commandBuffer: commandBuffer, dataBuffer: dataBuffer, destination: nextTexture)
 
             commandBuffer.present(drawable)
         }

@@ -19,35 +19,6 @@ struct VertexOut {
     float2 textureCoorinates;
 };
 
-//Render to screen
-vertex VertexOut vertexShader(constant VertexIn* vertexArray [[buffer(0)]], unsigned int vid [[vertex_id]]) {
-
-    VertexIn vertexData = vertexArray[vid];
-    VertexOut vertexDataOut;
-    vertexDataOut.position = float4(vertexData.position.x, vertexData.position.y, 0.0, 1.0);
-    vertexDataOut.textureCoorinates = vertexData.textureCoorinates.xy;
-    return vertexDataOut;
-}
-
-fragment half4 visualizeScalar(
-    VertexOut fragmentIn [[stage_in]],
-    texture2d<float, access::sample> tex2d [[texture(0)]]
-) {
-    constexpr sampler sampler2d(filter::nearest);
-
-    half3 color = half3(tex2d.sample(sampler2d, fragmentIn.textureCoorinates).rgb);
-
-    return half4(color, 1.0);
-}
-
-
-fragment half4 visualizeVector(VertexOut fragmentIn [[stage_in]], texture2d<float, access::sample> tex2d [[texture(0)]]) {
-    constexpr sampler sampler2d(filter::nearest);
-
-    half4 color = half4(tex2d.sample(sampler2d, fragmentIn.textureCoorinates));
-
-    return half4(half4(0.5) + 0.5 * color);
-}
 
 //Fluid Dynamics Render Encoder
 
@@ -63,6 +34,39 @@ struct BufferData {
     float inkRadius;
     float3 colors[5];
 };
+
+
+//Render to screen
+vertex VertexOut vertexShader(constant VertexIn* vertexArray [[buffer(0)]], unsigned int vid [[vertex_id]]) {
+
+    VertexIn vertexData = vertexArray[vid];
+    VertexOut vertexDataOut;
+    vertexDataOut.position = float4(vertexData.position.x, vertexData.position.y, 0.0, 1.0);
+    vertexDataOut.textureCoorinates = vertexData.textureCoorinates.xy;
+    return vertexDataOut;
+}
+
+fragment half4 visualizeScalar(
+    VertexOut fragmentIn [[stage_in]],
+    texture2d<float, access::sample> tex2d [[texture(0)]],
+    constant BufferData &bufferData [[buffer(0)]]
+) {
+    constexpr sampler sampler2d(filter::nearest);
+    half3 textureColor = half3(tex2d.sample(sampler2d, fragmentIn.textureCoorinates).rgb);
+    half4 color = half4(tex2d.sample(sampler2d, fragmentIn.textureCoorinates));
+
+    return half4(textureColor * abs(color.xxx), 1.0);
+
+}
+
+
+fragment half4 visualizeVector(VertexOut fragmentIn [[stage_in]], texture2d<float, access::sample> tex2d [[texture(0)]]) {
+    constexpr sampler sampler2d(filter::nearest);
+
+    half4 color = half4(tex2d.sample(sampler2d, fragmentIn.textureCoorinates));
+
+    return half4(half4(0.5) + 0.5 * color);
+}
 
 inline float2 bilerpFrag(sampler textureSampler, texture2d<float> texture, float2 p, float2 screenSize) {
     float4 ij;
@@ -113,27 +117,30 @@ fragment half4 applyForceScalar(
     constant BufferData &bufferData [[buffer(0)]]
 ) {
     constexpr sampler fluid_sampler(filter::linear);
-    
+
     half2 screenSize = half2(bufferData.screenSize);
     float radius = bufferData.inkRadius;
-    
+
     half4 color = half4(input.sample(fluid_sampler, fragmentIn.textureCoorinates));
     half4 final = color;
-    
+
     for (int i = 0; i < 5; ++i) {
         half2 location = half2(bufferData.positions[i]);
-        half3 splatColor = half3(bufferData.colors[i]); // Lấy màu sắc từ BufferData
+        half3 splatColor = half3(bufferData.colors[i]); // Sử dụng màu ngẫu nhiên
+
         if (location.x == location.y && location.x == 0) {
             continue;
         }
 
         half2 coords = location - half2(fragmentIn.textureCoorinates).xy * screenSize;
         half splat = gaussSplat(coords, radius);
+
         final.rgb += splatColor * splat;
     }
-
+ 
     return final;
 }
+
 
 
 fragment half2 advect(VertexOut fragmentIn [[stage_in]], texture2d<float, access::sample> velocity [[texture(0)]], texture2d<float, access::sample> advected [[texture(1)]], constant BufferData &bufferData [[buffer(0)]]) {
@@ -213,7 +220,7 @@ fragment half2 vorticity(VertexOut fragmentIn [[stage_in]], texture2d<float, acc
     float vb = velocity.sample(fluid_sampler, uv - yOffset).x;
     float vt = velocity.sample(fluid_sampler, uv + yOffset).x;
 
-    float scale = 0.5;
+    float scale = 0.5; // độ cuộn
 
     return half2(scale * ((vr - vl) - (vt - vb)), 0.0);
 }

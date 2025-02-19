@@ -21,7 +21,7 @@ class RenderShader {
     private var pipelineState: PipelineStateConfiguration
     private var renderPipelineState: MTLRenderPipelineState?
     
-    init(fragmentShader: String, vertexShader: String, pixelFormat: MTLPixelFormat = .bgra8Unorm) {
+    init(fragmentShader: String, vertexShader: String, pixelFormat: MTLPixelFormat = .rgba16Float) {
         pipelineState = PipelineStateConfiguration(pixelFormat: pixelFormat, vertexShader: vertexShader, fragmentShader: fragmentShader, computeShader: "")
         
         commonInit()
