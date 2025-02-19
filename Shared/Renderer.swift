@@ -18,6 +18,10 @@ func - (rhs: FloatTuple, lhs: FloatTuple) -> FloatTuple {
     return FloatTuple(rhs.0 - lhs.0, rhs.1 - lhs.1, rhs.2 - lhs.2, rhs.3 - lhs.3, rhs.4 - lhs.4)
 }
 
+struct ColorData {
+    var colors: (float3, float3, float3, float3, float3)
+}
+
 struct StaticData {
     var positions: FloatTuple
     var impulses: FloatTuple
@@ -27,6 +31,7 @@ struct StaticData {
     
     var screenSize: float2
     var inkRadius: simd_float1
+    var colors: (float3, float3, float3, float3, float3)
 }
 
 struct VertexData {
@@ -86,6 +91,32 @@ class Renderer: NSObject {
 
     //Index of the displayed slab
     private var currentIndex = 0
+    
+    private func randomColor() -> float3 {
+        let hue = Float.random(in: 0...1)
+        let saturation: Float = 1.0
+        let brightness: Float = 1.0
+        return HSVtoRGB(h: hue, s: saturation, v: brightness)
+    }
+
+    private func HSVtoRGB(h: Float, s: Float, v: Float) -> float3 {
+        let i = Int(h * 6)
+        let f = h * 6 - Float(i)
+        let p = v * (1 - s)
+        let q = v * (1 - f * s)
+        let t = v * (1 - (1 - f) * s)
+
+        switch i % 6 {
+        case 0: return float3(v, t, p)
+        case 1: return float3(q, v, p)
+        case 2: return float3(p, v, t)
+        case 3: return float3(p, q, v)
+        case 4: return float3(t, p, v)
+        case 5: return float3(v, p, q)
+        default: return float3(1, 1, 1)
+        }
+    }
+
 
     init(metalView: MTKView) {
         super.init()
@@ -96,10 +127,12 @@ class Renderer: NSObject {
 
         mtkView(metalView, drawableSizeWillChange: metalView.drawableSize)
     }
+    
 
     func nextSlab() {
         currentIndex = (currentIndex + 1) % 4
     }
+    
 
     func updateInteraction(points: FloatTuple?, in view: MTKView) {
         positions = points
@@ -115,13 +148,15 @@ class Renderer: NSObject {
 
     private final func initBuffers(width: Int, height: Int) {
         let bufferSize = MemoryLayout<StaticData>.stride
+        let colors = (randomColor(), randomColor(), randomColor(), randomColor(), randomColor())
 
         var staticData = StaticData(positions: (float2(), float2(), float2(), float2(), float2()),
                                     impulses: (float2(), float2(), float2(), float2(), float2()),
                                     impulseScalar: float2(),
                                     offsets: float2(1.0/Float(width), 1.0/Float(height)),
                                     screenSize: float2(Float(width), Float(height)),
-                                    inkRadius: 150 / Renderer.ScreenScaleAdjustment)
+                                    inkRadius: 150 / Renderer.ScreenScaleAdjustment,
+                                    colors: colors)
 
         uniformsBuffers.removeAll()
         for _ in 0..<Renderer.MaxBuffers {
@@ -133,21 +168,23 @@ class Renderer: NSObject {
 
     private final func nextBuffer(positions: FloatTuple?, directions: FloatTuple?) -> MTLBuffer {
         let buffer = uniformsBuffers[avaliableBufferIndex]
-
         let bufferData = buffer.contents().bindMemory(to: StaticData.self, capacity: 1)
 
         if let positions = positions, let directions = directions {
             let alteredPositions = positions / Renderer.ScreenScaleAdjustment
             let impulses = (positions - directions) / Renderer.ScreenScaleAdjustment
+            let colors = (randomColor(), randomColor(), randomColor(), randomColor(), randomColor())
 
             bufferData.pointee.positions = alteredPositions
             bufferData.pointee.impulses = impulses
             bufferData.pointee.impulseScalar = float2(0.8, 0.0)
+            bufferData.pointee.colors = colors
         }
 
         avaliableBufferIndex = (avaliableBufferIndex + 1) % Renderer.MaxBuffers
         return buffer
     }
+
 
     private final func drawSlab() -> Slab {
         switch currentIndex {

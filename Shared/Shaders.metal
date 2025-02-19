@@ -29,13 +29,17 @@ vertex VertexOut vertexShader(constant VertexIn* vertexArray [[buffer(0)]], unsi
     return vertexDataOut;
 }
 
-fragment half4 visualizeScalar(VertexOut fragmentIn [[stage_in]], texture2d<float, access::sample> tex2d [[texture(0)]]) {
+fragment half4 visualizeScalar(
+    VertexOut fragmentIn [[stage_in]],
+    texture2d<float, access::sample> tex2d [[texture(0)]]
+) {
     constexpr sampler sampler2d(filter::nearest);
 
-    half4 color = half4(tex2d.sample(sampler2d, fragmentIn.textureCoorinates));
+    half3 color = half3(tex2d.sample(sampler2d, fragmentIn.textureCoorinates).rgb);
 
-    return half4(half3(1.0, 0.0, 0.0) * abs(color.xxx), 1.0);
+    return half4(color, 1.0);
 }
+
 
 fragment half4 visualizeVector(VertexOut fragmentIn [[stage_in]], texture2d<float, access::sample> tex2d [[texture(0)]]) {
     constexpr sampler sampler2d(filter::nearest);
@@ -57,6 +61,7 @@ struct BufferData {
     float2 screenSize;
 
     float inkRadius;
+    float3 colors[5];
 };
 
 inline float2 bilerpFrag(sampler textureSampler, texture2d<float> texture, float2 p, float2 screenSize) {
@@ -102,30 +107,36 @@ fragment half2 applyForceVector(VertexOut fragmentIn [[stage_in]], texture2d<flo
     return final;
 }
 
-fragment half2 applyForceScalar(VertexOut fragmentIn [[stage_in]], texture2d<float, access::sample> input [[texture(0)]], constant BufferData &bufferData [[buffer(0)]]) {
+fragment half4 applyForceScalar(
+    VertexOut fragmentIn [[stage_in]],
+    texture2d<float, access::sample> input [[texture(0)]],
+    constant BufferData &bufferData [[buffer(0)]]
+) {
     constexpr sampler fluid_sampler(filter::nearest);
-
-    half2 impulseScalar = half2(bufferData.impulseScalar);
+    
     half2 screenSize = half2(bufferData.screenSize);
     float radius = bufferData.inkRadius;
-
-    half2 color = half2(input.sample(fluid_sampler, fragmentIn.textureCoorinates).xy);
-    half2 final = color;
-
-    for (int i=0; i<5; ++i) {
+    
+    half4 color = half4(input.sample(fluid_sampler, fragmentIn.textureCoorinates));
+    half4 final = color;
+    
+    for (int i = 0; i < 5; ++i) {
         half2 location = half2(bufferData.positions[i]);
+        half3 splatColor = half3(bufferData.colors[i]); // Lấy màu
 
         if (location.x == location.y && location.x == 0) {
             continue;
         }
 
         half2 coords = location - half2(fragmentIn.textureCoorinates).xy * screenSize;
-        half2 splat = impulseScalar * gaussSplat(coords, radius);
+        half splat = gaussSplat(coords, radius);
 
-        final = final + splat;
+        final.rgb += splatColor * splat;
     }
+
     return final;
 }
+
 
 fragment half2 advect(VertexOut fragmentIn [[stage_in]], texture2d<float, access::sample> velocity [[texture(0)]], texture2d<float, access::sample> advected [[texture(1)]], constant BufferData &bufferData [[buffer(0)]]) {
 
