@@ -112,7 +112,7 @@ fragment half4 applyForceScalar(
     texture2d<float, access::sample> input [[texture(0)]],
     constant BufferData &bufferData [[buffer(0)]]
 ) {
-    constexpr sampler fluid_sampler(filter::nearest);
+    constexpr sampler fluid_sampler(filter::linear);
     
     half2 screenSize = half2(bufferData.screenSize);
     float radius = bufferData.inkRadius;
@@ -122,15 +122,13 @@ fragment half4 applyForceScalar(
     
     for (int i = 0; i < 5; ++i) {
         half2 location = half2(bufferData.positions[i]);
-        half3 splatColor = half3(bufferData.colors[i]); // Lấy màu
-
+        half3 splatColor = half3(bufferData.colors[i]); // Lấy màu sắc từ BufferData
         if (location.x == location.y && location.x == 0) {
             continue;
         }
 
         half2 coords = location - half2(fragmentIn.textureCoorinates).xy * screenSize;
         half splat = gaussSplat(coords, radius);
-
         final.rgb += splatColor * splat;
     }
 

@@ -26,10 +26,10 @@ class RenderViewController: UIViewController {
 
         metalView.isExclusiveTouch = true
 
-        let doubleTapGesture = UITapGestureRecognizer(target: self, action: #selector(doubleTap))
-        doubleTapGesture.numberOfTapsRequired = 2
-        doubleTapGesture.numberOfTouchesRequired = 1
-        view.addGestureRecognizer(doubleTapGesture)
+//        let doubleTapGesture = UITapGestureRecognizer(target: self, action: #selector(doubleTap))
+//        doubleTapGesture.numberOfTapsRequired = 2
+//        doubleTapGesture.numberOfTouchesRequired = 1
+//        view.addGestureRecognizer(doubleTapGesture)
 
         let gestureRecognizer = UITapGestureRecognizer(target: self, action: #selector(changeSource))
         gestureRecognizer.numberOfTapsRequired = 2
