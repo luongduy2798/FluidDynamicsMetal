@@ -297,7 +297,7 @@ extension Renderer {
     }
 
     private final func render(commandBuffer: MTLCommandBuffer, dataBuffer: MTLBuffer, destination: MTLTexture) {
-        if currentIndex >= 2 {
+        if currentIndex == 2 {
             renderVector.calculateWithCommandBuffer(buffer: commandBuffer, indices: indexData, count: Renderer.indices.count, texture: destination) { (commandEncoder) in
                 commandEncoder.setVertexBuffer(self.vertData, offset: 0, index: 0)
                 commandEncoder.setFragmentTexture(self.drawSlab().ping, index: 0)
