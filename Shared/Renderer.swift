@@ -238,7 +238,8 @@ class Renderer: NSObject {
     private var videoPlayer: AVPlayer?
     private var videoOutput: AVPlayerItemVideoOutput?
     private var videoTimer: CADisplayLink?
-    
+    private var combinedMediaTexture: MTLTexture?
+
     private func pixelBufferToMTLTexture(pixelBuffer: CVPixelBuffer, device: MTLDevice) -> MTLTexture? {
         let textureLoader = MTKTextureLoader(device: device)
         
@@ -518,23 +519,6 @@ extension Renderer {
 
         destination.swap()
     }
-    
-    private final func showMedia(commandBuffer: MTLCommandBuffer, dataBuffer: MTLBuffer, destination: MTLTexture) {
-        if !mediaTextures.isEmpty {
-           for (index, mediaTexture) in mediaTextures.enumerated() {
-               guard let texture = mediaTexture else { continue }
-               renderScalarWithMedia.calculateWithCommandBuffer(buffer: commandBuffer, indices: indexData, count: Renderer.indices.count, texture: destination) { commandEncoder in
-                   commandEncoder.setVertexBuffer(self.vertData, offset: 0, index: 0)
-                   commandEncoder.setFragmentTexture(self.drawSlab().ping, index: 0)
-                   commandEncoder.setFragmentTexture(texture, index: 1) // Truyền texture hiện tại
-                   commandEncoder.setFragmentBuffer(dataBuffer, offset: 0, index: 0)
-
-                   var singleMediaInfo = mediaInfos[index]
-                   commandEncoder.setFragmentBytes(&singleMediaInfo, length: MemoryLayout<MediaInfo>.size, index: 1) // Truyền vị trí và kích thước
-               }
-           }
-       }
-    }
 
     private final func scalarWithMedia(commandBuffer: MTLCommandBuffer, dataBuffer: MTLBuffer, p: Slab, w: Slab, destination: Slab) {
         gradientShader.calculateWithCommandBuffer(buffer: commandBuffer, indices: indexData, count: Renderer.indices.count, texture: destination.pong) { (commandEncoder) in
@@ -548,20 +532,34 @@ extension Renderer {
         destination.swap()
     }
 
+
     private final func render(commandBuffer: MTLCommandBuffer, dataBuffer: MTLBuffer, destination: MTLTexture) {
+        // Render các hiệu ứng khác (như trước đây)
         if currentIndex == 2 {
-            renderVector.calculateWithCommandBuffer(buffer: commandBuffer, indices: indexData, count: Renderer.indices.count, texture: destination) { (commandEncoder) in
+            renderVector.calculateWithCommandBuffer(buffer: commandBuffer, indices: indexData, count: Renderer.indices.count, texture: destination) { commandEncoder in
                 commandEncoder.setVertexBuffer(self.vertData, offset: 0, index: 0)
                 commandEncoder.setFragmentTexture(self.drawSlab().ping, index: 0)
             }
         } else {
-//            renderScalar.calculateWithCommandBuffer(buffer: commandBuffer, indices: indexData, count: Renderer.indices.count, texture: destination) { (commandEncoder) in
-//                commandEncoder.setVertexBuffer(self.vertData, offset: 0, index: 0)
-//                commandEncoder.setFragmentTexture(self.drawSlab().ping, index: 0)
-//                commandEncoder.setFragmentBuffer(dataBuffer, offset: 0, index: 0)
-//            }
+            if let textureArray = self.textureArray {
+                renderScalarWithMedia.calculateWithCommandBuffer(buffer: commandBuffer, indices: indexData, count: Renderer.indices.count, texture: destination) { commandEncoder in
+                        commandEncoder.setVertexBuffer(self.vertData, offset: 0, index: 0)
+                        commandEncoder.setFragmentTexture(self.drawSlab().ping, index: 0)
+                        commandEncoder.setFragmentTexture(textureArray, index: 1)
+                        commandEncoder.setFragmentBuffer(dataBuffer, offset: 0, index: 0)
+                        commandEncoder.setFragmentBytes(&mediaInfos, length: MemoryLayout<MediaInfo>.size * mediaInfos.count, index: 1)
+
+                    }
+            } else {
+                renderScalar.calculateWithCommandBuffer(buffer: commandBuffer, indices: indexData, count: Renderer.indices.count, texture: destination) { commandEncoder in
+                commandEncoder.setVertexBuffer(self.vertData, offset: 0, index: 0)
+                commandEncoder.setFragmentTexture(self.drawSlab().ping, index: 0)
+                commandEncoder.setFragmentBuffer(dataBuffer, offset: 0, index: 0)
+                }
+            }
         }
     }
+
 }
 
 extension Renderer: MTKViewDelegate {
@@ -596,7 +594,6 @@ extension Renderer: MTKViewDelegate {
         if let drawable = view.currentDrawable {
 
             let nextTexture = drawable.texture
-            showMedia(commandBuffer: commandBuffer, dataBuffer: dataBuffer, destination: nextTexture)
 
             render(commandBuffer: commandBuffer, dataBuffer: dataBuffer, destination: nextTexture)
 

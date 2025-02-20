@@ -19,7 +19,7 @@ struct PipelineStateConfiguration {
 
 class RenderShader {
     private var pipelineState: PipelineStateConfiguration
-    private var renderPipelineState: MTLRenderPipelineState?
+    var renderPipelineState: MTLRenderPipelineState?
     
     init(fragmentShader: String, vertexShader: String, pixelFormat: MTLPixelFormat = .rgba16Float) {
         pipelineState = PipelineStateConfiguration(pixelFormat: pixelFormat, vertexShader: vertexShader, fragmentShader: fragmentShader, computeShader: "")
