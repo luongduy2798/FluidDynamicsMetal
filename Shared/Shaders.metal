@@ -33,6 +33,13 @@ struct BufferData {
 
     float inkRadius;
     float3 colors[5];
+    int countMedia;
+};
+
+
+struct MediaInfo {
+    float2 position;
+    float2 size;
 };
 
 
@@ -95,23 +102,68 @@ half4 sunrayEffect(
     return half4(sunrayColor, 1.0);
 }
 
+fragment half4 visualizeScalarWithMedia(
+    VertexOut fragmentIn [[stage_in]],
+    texture2d<float, access::sample> tex2d [[texture(0)]],
+    texture2d_array<float, access::sample> mediaTexArray [[texture(1)]],
+    constant MediaInfo *mediaInfos [[buffer(1)]],
+    constant BufferData &bufferData [[buffer(0)]]
+) {
+    constexpr sampler sampler2d(filter::linear, address::clamp_to_edge);
 
+    half3 textureColor = half3(tex2d.sample(sampler2d, fragmentIn.textureCoorinates).rgb);
+
+    half4 bloom = bloomEffect(fragmentIn, tex2d, bufferData);
+    half4 sunray = sunrayEffect(fragmentIn, tex2d, bufferData);
+    half4 finalColor = mix(bloom, sunray, 0.5h);
+    finalColor.rgb *= textureColor;
+
+    float2 screenSize = bufferData.screenSize;
+
+    for (int i = 0; i < bufferData.countMedia; ++i) {
+        float2 position = mediaInfos[i].position;
+        float2 size = mediaInfos[i].size;
+
+        float2 topLeft = position / screenSize;
+        float2 bottomRight = (position + size) / screenSize;
+
+        if (fragmentIn.textureCoorinates.x >= topLeft.x &&
+            fragmentIn.textureCoorinates.x <= bottomRight.x &&
+            fragmentIn.textureCoorinates.y >= topLeft.y &&
+            fragmentIn.textureCoorinates.y <= bottomRight.y) {
+
+            float2 uv = (fragmentIn.textureCoorinates - topLeft) / (bottomRight - topLeft);
+
+            if (uv.x >= 0.0 && uv.x <= 1.0 && uv.y >= 0.0 && uv.y <= 1.0) {
+                int layer = i;
+                finalColor.rgb = mix(finalColor.rgb, half3(mediaTexArray.sample(sampler2d, uv, layer).rgb), 0.7h);
+            }
+        }
+    }
+
+    return finalColor;
+}
 
 fragment half4 visualizeScalar(
     VertexOut fragmentIn [[stage_in]],
     texture2d<float, access::sample> tex2d [[texture(0)]],
     constant BufferData &bufferData [[buffer(0)]]
 ) {
-   constexpr sampler sampler2d(filter::nearest);
-   half3 textureColor = half3(tex2d.sample(sampler2d, fragmentIn.textureCoorinates).rgb);
-      
-   half4 bloom = bloomEffect(fragmentIn, tex2d, bufferData);
-   half4 sunray = sunrayEffect(fragmentIn, tex2d, bufferData);
-   half4 finalColor = mix(bloom, sunray, 0.5h);
-   finalColor.rgb *= textureColor; // Nhân với màu ngẫu nhiên để tạo sự biến đổi
-   
-   return finalColor;
+    constexpr sampler sampler2d(filter::linear, address::clamp_to_edge);
+
+    half3 textureColor = half3(tex2d.sample(sampler2d, fragmentIn.textureCoorinates).rgb);
+
+    half4 bloom = bloomEffect(fragmentIn, tex2d, bufferData);
+    half4 sunray = sunrayEffect(fragmentIn, tex2d, bufferData);
+    half4 finalColor = mix(bloom, sunray, 0.5h);
+    finalColor.rgb *= textureColor;
+
+    return finalColor;
 }
+
+
+
+
 
 fragment half4 visualizeVector(VertexOut fragmentIn [[stage_in]], texture2d<float, access::sample> tex2d [[texture(0)]]) {
     constexpr sampler sampler2d(filter::nearest);

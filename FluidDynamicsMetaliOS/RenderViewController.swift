@@ -25,6 +25,9 @@ class RenderViewController: UIViewController {
         metalView.delegate = renderer
 
         metalView.isExclusiveTouch = true
+        
+        setupMediaList()
+
 
 //        let doubleTapGesture = UITapGestureRecognizer(target: self, action: #selector(doubleTap))
 //        doubleTapGesture.numberOfTapsRequired = 2
@@ -38,6 +41,18 @@ class RenderViewController: UIViewController {
 
         NotificationCenter.default.addObserver(self, selector: #selector(willResignActive), name: .UIApplicationWillResignActive, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(didBecomeActive), name: .UIApplicationDidBecomeActive, object: nil)
+    }
+    
+    func setupMediaList() {
+        let mediaList: [MediaData] = [
+           
+            MediaData(type: .image, src: "https://xamhinhdep.com/wp-content/uploads/2024/12/anh-gai-xinh-vu-to.jpg", position: CGPoint(x: 0, y: 500), size: CGSize(width: 100, height: 200)),
+           
+            MediaData(type: .image, src: "https://genzrelax.com/wp-content/uploads/2023/02/gai-xinh-nguc-to-1.jpg", position: CGPoint(x: 50, y: 100), size: CGSize(width: 200, height: 550)),
+            MediaData(type: .video, src: "http://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4", position: CGPoint(x: 100, y: 300), size: CGSize(width: 300, height: 400)),
+        ]
+
+        renderer.setMediaList(mediaList, device: MetalDevice.sharedInstance.device)
     }
 
     deinit {

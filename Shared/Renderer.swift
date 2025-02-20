@@ -7,6 +7,8 @@
 //
 
 import MetalKit
+import AVFoundation
+import UIKit
 
 typealias FloatTuple = (float2, float2, float2, float2, float2)
 
@@ -32,6 +34,24 @@ struct StaticData {
     var screenSize: float2
     var inkRadius: simd_float1
     var colors: (float3, float3, float3, float3, float3)
+    var countMedia: Int32
+}
+
+enum MediaType {
+    case image
+    case video
+}
+
+struct MediaData {
+    let type: MediaType
+    let src: String
+    let position: CGPoint
+    let size: CGSize
+}
+
+struct MediaInfo {
+    var position: float2
+    var size: float2
 }
 
 struct VertexData {
@@ -41,8 +61,7 @@ struct VertexData {
 
 class Renderer: NSObject {
     static let MaxBuffers = 3
-
-    //Adjust this to reduce or increase the size of the slab textures. Reasonable values are in the range [0.5, 3.0]
+  
     static let ScreenScaleAdjustment: Float = 1.0
 
     //Vertex and index data
@@ -71,6 +90,8 @@ class Renderer: NSObject {
 
     private let renderVector: RenderShader = RenderShader(fragmentShader: "visualizeVector", vertexShader: "vertexShader")
     private let renderScalar: RenderShader = RenderShader(fragmentShader: "visualizeScalar", vertexShader: "vertexShader")
+    private let renderScalarWithMedia: RenderShader = RenderShader(fragmentShader: "visualizeScalarWithMedia", vertexShader: "vertexShader")
+
 
     //Touch or Mouse positions
     private var positions: FloatTuple?
@@ -117,6 +138,172 @@ class Renderer: NSObject {
         default: return float3(1.0, 1.0, 1.0)
         }
     }
+    
+    private var textureArray: MTLTexture?
+    
+    func createTextureArray(from textures: [MTLTexture], device: MTLDevice) -> MTLTexture? {
+        guard let firstTexture = textures.first else { return nil }
+
+        let descriptor = MTLTextureDescriptor()
+        descriptor.textureType = .type2DArray
+        descriptor.pixelFormat = firstTexture.pixelFormat
+        descriptor.width = firstTexture.width
+        descriptor.height = firstTexture.height
+        descriptor.arrayLength = textures.count
+        descriptor.usage = [.shaderRead]
+
+        guard let textureArray = device.makeTexture(descriptor: descriptor) else { return nil }
+
+        let region = MTLRegionMake2D(0, 0, firstTexture.width, firstTexture.height)
+        let bytesPerRow = firstTexture.width * 4
+        let bytesPerImage = bytesPerRow * firstTexture.height // ✅ Thêm bytesPerImage
+
+        for (index, texture) in textures.enumerated() {
+            let data = texture.bufferBytes() // Lấy dữ liệu pixel của texture
+            textureArray.replace(region: region,
+                                 mipmapLevel: 0,
+                                 slice: index,
+                                 withBytes: data,
+                                 bytesPerRow: bytesPerRow,
+                                 bytesPerImage: bytesPerImage) // ✅ Thêm bytesPerImage
+            free(UnsafeMutableRawPointer(mutating: data)) // ✅ Giải phóng bộ nhớ ngay sau khi dùng
+        }
+
+        return textureArray
+    }
+
+
+
+    func updateTextureArrayIfNeeded() {
+        if let array = createTextureArray(from: mediaTextures.compactMap { $0 }, device: MetalDevice.sharedInstance.device) {
+            self.textureArray = array
+        }
+    }
+    
+    private var mediaList: [MediaData] = []
+    private var mediaTextures: [MTLTexture?] = []
+    private var mediaInfos: [MediaInfo] = []
+
+    func setMediaList(_ list: [MediaData], device: MTLDevice) {
+        self.mediaList = list
+        self.mediaTextures = Array(repeating: nil, count: list.count)
+        self.mediaInfos = list.map { media in
+            return MediaInfo(position: float2(Float(media.position.x), Float(media.position.y)),
+                             size: float2(Float(media.size.width), Float(media.size.height)))
+        }
+
+        for (index, media) in list.enumerated() {
+            if media.type == .image {
+                loadNetworkImage(urlString: media.src, device: device, index: index)
+            } else if media.type == .video {
+                loadNetworkVideo(urlString: media.src, device: device, index: index)
+            }
+        }
+    }
+    
+    private func loadNetworkImage(urlString: String, device: MTLDevice, index: Int) {
+        guard let url = URL(string: urlString) else {
+            print("Invalid URL")
+            return
+        }
+
+        URLSession.shared.dataTask(with: url) { [weak self] data, _, error in
+            guard let self = self else { return }
+            guard let data = data, error == nil, let image = UIImage(data: data) else {
+                print("Failed to download image: \(error?.localizedDescription ?? "Unknown error")")
+                return
+            }
+
+            let textureLoader = MTKTextureLoader(device: device)
+            guard let cgImage = image.cgImage else {
+                print("Failed to create CGImage")
+                return
+            }
+
+            do {
+                self.mediaTextures[index] = try textureLoader.newTexture(cgImage: cgImage, options: [
+                    MTKTextureLoader.Option.SRGB: false,
+                    MTKTextureLoader.Option.origin: MTKTextureLoader.Origin.topLeft
+                ])
+                updateTextureArrayIfNeeded()
+                print("Network image texture loaded successfully at index \(index)")
+            } catch {
+                print("Failed to load texture: \(error)")
+            }
+        }.resume()
+    }
+
+    
+    private var videoPlayer: AVPlayer?
+    private var videoOutput: AVPlayerItemVideoOutput?
+    private var videoTimer: CADisplayLink?
+    
+    private func pixelBufferToMTLTexture(pixelBuffer: CVPixelBuffer, device: MTLDevice) -> MTLTexture? {
+        let textureLoader = MTKTextureLoader(device: device)
+        
+        var texture: MTLTexture?
+        let ciImage = CIImage(cvPixelBuffer: pixelBuffer)
+        let context = CIContext(options: nil)
+
+        if let cgImage = context.createCGImage(ciImage, from: ciImage.extent) {
+            do {
+                texture = try textureLoader.newTexture(cgImage: cgImage, options: [
+                    .SRGB: false,
+                    .origin: MTKTextureLoader.Origin.topLeft // Đảm bảo video không bị lật ngược
+                ])
+            } catch {
+                print("Failed to load video frame as texture: \(error)")
+            }
+        }
+        return texture
+    }
+
+    
+    @objc private func updateVideoFrame(_ displayLink: CADisplayLink) {
+        guard let videoOutput = videoOutput else { return }
+        let currentTime = videoPlayer?.currentTime() ?? kCMTimeZero
+
+        if videoOutput.hasNewPixelBuffer(forItemTime: currentTime),
+           let pixelBuffer = videoOutput.copyPixelBuffer(forItemTime: currentTime, itemTimeForDisplay: nil) {
+
+            // Lấy index của video trong danh sách
+            if let index = mediaList.firstIndex(where: { $0.type == .video }) {
+                self.mediaTextures[index] = pixelBufferToMTLTexture(pixelBuffer: pixelBuffer, device: MetalDevice.sharedInstance.device)
+                updateTextureArrayIfNeeded()
+            }
+        }
+    }
+
+
+    private func loadNetworkVideo(urlString: String, device: MTLDevice, index: Int) {
+        guard let url = URL(string: urlString) else {
+            print("Invalid URL")
+            return
+        }
+
+        let videoPlayer = AVPlayer(url: url)
+        let playerItem = AVPlayerItem(url: url)
+
+        let outputSettings: [String: Any] = [
+            kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA
+        ]
+        let videoOutput = AVPlayerItemVideoOutput(pixelBufferAttributes: outputSettings)
+        playerItem.add(videoOutput)
+
+        videoPlayer.replaceCurrentItem(with: playerItem)
+        videoPlayer.play()
+
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            let displayLink = CADisplayLink(target: self, selector: #selector(self.updateVideoFrame(_:)))
+            displayLink.add(to: .main, forMode: RunLoopMode.commonModes)
+
+            self.videoOutput = videoOutput
+            self.videoPlayer = videoPlayer
+            self.videoTimer = displayLink
+        }
+    }
+
 
 
 
@@ -127,6 +314,7 @@ class Renderer: NSObject {
         metalView.framebufferOnly = true
         metalView.preferredFramesPerSecond = 60
 
+        
         mtkView(metalView, drawableSizeWillChange: metalView.drawableSize)
     }
     
@@ -158,7 +346,8 @@ class Renderer: NSObject {
                                     offsets: float2(1.0/Float(width), 1.0/Float(height)),
                                     screenSize: float2(Float(width), Float(height)),
                                     inkRadius: 150 / Renderer.ScreenScaleAdjustment,
-                                    colors: colors)
+                                    colors: colors,
+                                    countMedia: Int32(mediaInfos.count))
 
         uniformsBuffers.removeAll()
         for _ in 0..<Renderer.MaxBuffers {
@@ -171,6 +360,7 @@ class Renderer: NSObject {
     private final func nextBuffer(positions: FloatTuple?, directions: FloatTuple?) -> MTLBuffer {
         let buffer = uniformsBuffers[avaliableBufferIndex]
         let bufferData = buffer.contents().bindMemory(to: StaticData.self, capacity: 1)
+        bufferData.pointee.countMedia = Int32(mediaInfos.count)
 
         if let positions = positions, let directions = directions {
             let alteredPositions = positions / Renderer.ScreenScaleAdjustment
@@ -198,6 +388,37 @@ class Renderer: NSObject {
             return velocityVorticity
         default:
             return density
+        }
+    }
+}
+
+extension MTLTexture {
+    func bufferBytes() -> UnsafeRawPointer {
+        let pixelFormatSize = self.pixelFormatSize() // Lấy kích thước mỗi pixel (bytes)
+        let byteCount = width * height * pixelFormatSize
+        let pixelData = malloc(byteCount)!
+
+        self.getBytes(pixelData,
+                      bytesPerRow: width * pixelFormatSize,
+                      from: MTLRegionMake2D(0, 0, width, height),
+                      mipmapLevel: 0)
+
+        return UnsafeRawPointer(pixelData)
+    }
+
+    // Hàm tính kích thước pixel dựa trên pixelFormat
+    private func pixelFormatSize() -> Int {
+        switch self.pixelFormat {
+        case .rgba8Unorm, .rgba8Unorm_srgb, .bgra8Unorm, .bgra8Unorm_srgb:
+            return 4 // 4 bytes per pixel (RGBA hoặc BGRA 8 bits mỗi channel)
+        case .r8Unorm:
+            return 1
+        case .rg8Unorm:
+            return 2
+        case .rgba16Float:
+            return 8
+        default:
+            fatalError("Unsupported pixel format: \(self.pixelFormat)")
         }
     }
 }
@@ -303,10 +524,20 @@ extension Renderer {
                 commandEncoder.setFragmentTexture(self.drawSlab().ping, index: 0)
             }
         } else {
-            renderScalar.calculateWithCommandBuffer(buffer: commandBuffer, indices: indexData, count: Renderer.indices.count, texture: destination) { (commandEncoder) in
-                commandEncoder.setVertexBuffer(self.vertData, offset: 0, index: 0)
-                commandEncoder.setFragmentTexture(self.drawSlab().ping, index: 0)
-                commandEncoder.setFragmentBuffer(dataBuffer, offset: 0, index: 0)
+            if let textureArray = self.textureArray {
+                renderScalarWithMedia.calculateWithCommandBuffer(buffer: commandBuffer, indices: indexData, count: Renderer.indices.count, texture: destination) { (commandEncoder) in
+                    commandEncoder.setVertexBuffer(self.vertData, offset: 0, index: 0)
+                    commandEncoder.setFragmentTexture(self.drawSlab().ping, index: 0)
+                    commandEncoder.setFragmentBuffer(dataBuffer, offset: 0, index: 0)
+                    commandEncoder.setFragmentTexture(textureArray, index: 1)
+                    commandEncoder.setFragmentBytes(&mediaInfos, length: MemoryLayout<MediaInfo>.size * mediaInfos.count, index: 1)
+                }
+            }else {
+                renderScalar.calculateWithCommandBuffer(buffer: commandBuffer, indices: indexData, count: Renderer.indices.count, texture: destination) { (commandEncoder) in
+                    commandEncoder.setVertexBuffer(self.vertData, offset: 0, index: 0)
+                    commandEncoder.setFragmentTexture(self.drawSlab().ping, index: 0)
+                    commandEncoder.setFragmentBuffer(dataBuffer, offset: 0, index: 0)
+                }
             }
         }
     }
